@@ -682,6 +682,12 @@ Python 文件（.py）不受影响。
 **想读栅格数据？**
 当前 `read_gdb_data` 只支持矢量要素类和表；栅格会在列举时出现，但读取会明确提示不支持。
 
+## 许可证
+
+Copyright 2026 1834495203.
+
+本项目采用 [Apache License 2.0](LICENSE)。ArcGIS Pro、ArcPy 及其他第三方依赖不包含在本项目的授权范围内，使用时仍需遵守各自的许可条款。
+
 ## 来源
 
 Codex 的 MCP 配置写法参考 OpenAI Codex 官方配置文档与社区实践：
