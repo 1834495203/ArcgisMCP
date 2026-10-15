@@ -5,18 +5,19 @@
 ## 成果保留
 
 - 产出工具先写同一 workspace 的 `mcpwork_<随机号>`，成功且确认输出存在后才改名发布。
-- `overwrite=false` 遇到已有成果仍报错。`overwrite=true` 先将旧目标改名归档为 `<名称>_v_<随机号>`，再把成功的新成果发布到指定路径；返回 `target_replaced=true` 和 `previous_output`。交换失败会恢复旧目标，历史成果保留。
+- `overwrite=false` 遇到已有成果仍报错。`overwrite=true` 先将旧目标改名归档为 `<名称>_overwrite`，再把成功的新成果发布到指定路径；返回 `target_replaced=true` 和 `previous_output`。交换失败会恢复旧目标，历史成果保留。
 - 字段新增、计算、删除、改名、坐标/几何属性、几何修复、追加等编辑工具，统一使用 `arcpy.management.Copy` 复制后修改，再发布新版本。编辑内容不改输入路径；显式覆盖和归档删除按各自声明的路径语义执行。返回的 `source`、`in_features` 保持输入身份，`output` 指向新版本，`source_modified=false`。
 - 后续操作必须使用返回的 `output` / `out_features`。继续传原始路径表示另开分支。
-- `delete_dataset(confirm=true)` 把原件改名归档，原路径随即不存在；返回 `original_path_exists=false`。完整数据仍保留在返回的 `output`。`delete_features(where=..., confirm=true)` 则先复制后删除命中记录，输入原件不变。通用 Delete/DeleteFeatures/DeleteRows 也有等价适配器。
+- 编辑成果自动命名为 `<输入名>_<操作名>`，如 `D_calculate_fields`。同一路径重复操作时依次选择 `_2`、`_3`，不覆盖前一次成果；固定工具和通用适配器使用同一逻辑操作名。Shapefile 等文件保留扩展名。过长的名称截短输入名部分，保留操作后缀；命名和碰撞检查在工作区锁内完成。显式指定的产出路径不受该规则改变，旧历史不自动改名。
+- `delete_dataset(confirm=true)` 把原件改名归档为 `<名称>_delete_dataset`，原路径随即不存在；返回 `original_path_exists=false`。完整数据仍保留在返回的 `output`。覆盖和删除归档名重名时也加 `_2`、`_3`。`delete_features(where=..., confirm=true)` 则先复制后删除命中记录，输入原件不变。通用 Delete/DeleteFeatures/DeleteRows 也有等价适配器。
 - 当前实现不提供撤销和自动清理历史成果。失败暂存数据不会作为有效成果列举。
 
 ```text
 add_field(in_features="./data/X.gdb/A", field="VALUE", field_type="LONG")
-  -> output=".../X.gdb/A_v_123..."
-calculate_fields(in_features=".../X.gdb/A_v_123...", assignments={"VALUE": "7"}, where="OBJECTID=1")
-  -> output=".../X.gdb/A_v_123..._v_456..."
-explain(path=".../X.gdb/A_v_123..._v_456...")
+  -> output=".../X.gdb/A_add_field"
+calculate_fields(in_features=".../X.gdb/A_add_field", assignments={"VALUE": "7"}, where="OBJECTID=1")
+  -> output=".../X.gdb/A_add_field_calculate_fields"
+explain(path=".../X.gdb/A_add_field_calculate_fields")
 ```
 
 ## 审计
@@ -81,7 +82,7 @@ ArcGIS Pro 不遵守本项目的协作锁，读图层仍可能占用 schema lock
 
 消除后普通 AREA_MU 等属性不自动重算。返回值会提示先对新 output 重算面积，再按面积字段执行下一遍；eliminated_count 为实际减少的记录数，selected_count 为选中数，两者可能不同。
 
-`arcgis_status` 和工具结果中带 `data_policy_version=archive-replace-2`，用于识别旧进程。更新后应重启 MCP 服务及其 worker，避免混用旧版写入语义。
+`arcgis_status` 和工具结果中带 `data_policy_version=archive-replace-3`，用于识别旧进程。更新后应重启 MCP 服务及其 worker，避免混用旧版写入和命名语义。
 
 ## 验证
 

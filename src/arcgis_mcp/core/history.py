@@ -10,7 +10,7 @@ import contextlib
 import hashlib
 from pathlib import Path
 
-DATA_POLICY_VERSION = 'archive-replace-2'
+DATA_POLICY_VERSION = 'archive-replace-3'
 
 
 def canonical(path):

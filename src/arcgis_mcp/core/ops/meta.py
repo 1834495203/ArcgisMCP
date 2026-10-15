@@ -409,7 +409,7 @@ def op_run_arcpy_tool(tool: str, parameters=None, output_parameters=None,
         if isinstance(edit_params.get('in_features'), str):
             edit_params['in_features'] = [edit_params['in_features']]
         with safety.WorkspaceLease(source):
-            publication = safety.Publication(safety.version_path(source), root=safety.CURRENT_ROOT)
+            publication = safety.Publication(safety.version_path(source, operation), root=safety.CURRENT_ROOT)
             safety.copy_for_edit(source, publication.work)
             with arcpy.EnvManager(overwriteOutput=False):
                 result = attributes.OPERATIONS[operation]['run'](publication.work, edit_params) or {}

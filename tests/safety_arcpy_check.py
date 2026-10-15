@@ -81,6 +81,7 @@ def main():
             added = write('edit', operation='add_field', target=original,
                           params={'field': 'VALUE', 'field_type': 'LONG'})['output']
             before = worker.call('read', workspace=gdb, dataset='original', limit=10)
+            check('fixed edit uses tool suffix', Path(added).name == 'original_add_field')
             check('source schema retained', 'VALUE' not in [f['name'] for f in before['fields']])
             copied = worker.call('read', workspace=gdb, dataset=Path(added).name, limit=10)
             check('global IDs retained in copy', [r['GlobalID'] for r in before['records']] ==
@@ -88,6 +89,10 @@ def main():
             calculated = write('edit', operation='calculate_fields', target=added,
                 params={'assignments': {'VALUE': '7'}, 'where': 'OBJECTID = 1'})['output']
             rows = worker.call('read', workspace=gdb, dataset=Path(calculated).name, fields=['VALUE'], limit=10)
+            check('chained edit has readable name', Path(calculated).name == 'original_add_field_calculate_fields')
+            branch = write('edit', operation='calculate_fields', target=added,
+                params={'assignments': {'VALUE': '8'}, 'where': 'OBJECTID = 1'})['output']
+            check('existing edit name adds numeric suffix', branch == calculated + '_2')
             check('where updates one row only', [r['VALUE'] for r in rows['records']] == [7, None])
             previous = worker.call('read', workspace=gdb, dataset=Path(added).name, fields=['VALUE'], limit=10)
             check('previous values retained', [r['VALUE'] for r in previous['records']] == [None, None])
@@ -96,6 +101,7 @@ def main():
             repeated = write('geoprocess', operation='copy_features', inputs=[original], output=out, overwrite=True)
             check('overwrite replaces requested path', repeated['output'] == out and repeated['target_replaced'])
             check('old output retained', worker.call('describe', path=repeated['previous_output'])['record_count'] == 2)
+            check('overwritten data has readable archive name', Path(repeated['previous_output']).name == 'result_overwrite')
             new_schema = worker.call('read', workspace=gdb, dataset='result', limit=0)
             check('requested name actually contains new data', 'VALUE' not in [f['name'] for f in new_schema['fields']])
             check('old job points to retained data', History(root).get(first_output['job_id'])['result']['output'] == repeated['previous_output'])
@@ -103,6 +109,7 @@ def main():
             generic = write('run_arcpy_tool', tool='CalculateField_management', parameters={
                 'in_table': calculated, 'field': 'VALUE', 'expression': '9', 'expression_type': 'PYTHON3'})
             check('generic edits copy first', generic['output'] != calculated)
+            check('generic edit uses logical tool suffix', generic['output'] == calculated + '_calculate_fields')
             generic_copy = write('run_arcpy_tool', tool='CopyFeatures_management', parameters={
                 'in_features': generic['output'], 'out_feature_class': gdb + '/generic'})
             check('generic producers audited', len(History(root).lineage(generic_copy['outputs'][0]['path'])['steps']) == 5)
@@ -124,6 +131,7 @@ def main():
                                     parameters={'in_features': calculated}, confirm=True)
             check('generic DeleteFeatures has supported safe exit', generic_removed['deleted_count'] == 2 and
                   worker.call('describe', path=generic_removed['output'])['record_count'] == 0)
+            check('fixed and generic edits share collision counter', generic_removed['output'] == removed['output'] + '_2')
             rat = worker.call('read', workspace=gdb, dataset='classified', fields=['Value', 'Count'], limit=10)
             check('raster attribute table exposes classes', rat['is_raster_attribute_table'] and
                   sorted((r['Value'], r['Count']) for r in rat['records']) == [(0, 2), (1, 2)])
@@ -156,12 +164,14 @@ def main():
             shp_edit = write('edit', operation='add_xy_coordinates', target=shp)
             check('shapefile source retained', Path(shp).exists() and Path(shp_edit['output']).exists())
             check('shapefile family published', Path(shp_edit['output']).with_suffix('.dbf').exists())
+            check('shapefile name preserves extension', Path(shp_edit['output']).name == 'points_add_xy_coordinates.shp')
             json_out = write('geoprocess', operation='features_to_json', inputs=[calculated],
                              output=str(root / 'export.json'), params={'geojson': True})
             check('actual geojson suffix published', json_out['output'].endswith('.geojson') and Path(json_out['output']).exists())
             deleted = write('edit', operation='delete_dataset', target=calculated, params={'confirm': True})
             check('delete archives data and removes original name', deleted['logical_deleted'] and
                   not deleted['original_path_exists'] and worker.call('describe', path=deleted['output'])['record_count'] == 2)
+            check('deleted data has readable archive name', deleted['output'] == calculated + '_delete_dataset')
             try:
                 worker.call('describe', path=calculated)
             except Exception:

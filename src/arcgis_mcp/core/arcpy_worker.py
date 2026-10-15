@@ -646,7 +646,7 @@ def op_edit(operation: str, target: str, params=None):
                 'source_modified': True, 'modified_in_place': False, 'retained_inputs': True,
                 **publication.fields(), 'target_replaced': False}
     with safety.WorkspaceLease(target):
-        final = safety.version_path(target)
+        final = safety.version_path(target, operation)
         publication = safety.Publication(final, root=safety.CURRENT_ROOT)
         with arcpy.EnvManager(overwriteOutput=False):
             safety.copy_for_edit(target, publication.work)

@@ -153,6 +153,55 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(safety.internal(output))
         self.assertEqual(json.loads(publication.manifest.read_text())['state'], 'published')
 
+    def test_readable_edit_names_keep_versions_and_extensions(self):
+        source = self.root / '土壤.shp'
+        fake = types.SimpleNamespace(Exists=lambda p: Path(p).exists())
+        with patch.dict(sys.modules, {'arcpy': fake}):
+            with safety.WorkspaceLease(str(source)):
+                first = safety.version_path(str(source), 'calculate_fields')
+                Path(first).write_text('first')
+                second = safety.version_path(str(source), 'calculate_fields')
+                Path(second).write_text('second')
+                third = safety.version_path(str(source), 'calculate_fields')
+                chained = safety.version_path(first, 'repair_geometry')
+        self.assertEqual(Path(first).name, '土壤_calculate_fields.shp')
+        self.assertEqual(Path(second).name, '土壤_calculate_fields_2.shp')
+        self.assertEqual(Path(third).name, '土壤_calculate_fields_3.shp')
+        self.assertEqual(Path(chained).name, '土壤_calculate_fields_repair_geometry.shp')
+        self.assertEqual(Path(first).read_text(), 'first')
+
+    def test_readable_names_respect_gdb_names_and_shapefile_sidecars(self):
+        fake = types.SimpleNamespace(Exists=lambda p: Path(p).exists())
+        (self.root / 'points_add_field.dbf').write_text('reserved')
+        with patch.dict(sys.modules, {'arcpy': fake}):
+            shp = safety.version_path(str(self.root / 'points.shp'), 'add_field')
+            feature_class = safety.version_path(str(self.root / 'X.gdb' / 'feature.name'), 'add_field')
+            gdb = safety.version_path(str(self.root / 'X.gdb'), 'overwrite')
+            long_name = safety.version_path(str(self.root / ('A' * 150 + '.shp')), 'calculate_fields')
+        self.assertEqual(Path(shp).name, 'points_add_field_2.shp')
+        self.assertEqual(Path(feature_class).name, 'feature.name_add_field')
+        self.assertEqual(Path(gdb).name, 'X_overwrite.gdb')
+        self.assertTrue(Path(long_name).stem.endswith('_calculate_fields'))
+        self.assertLessEqual(len(Path(long_name).stem), 120)
+
+    def test_repeated_overwrites_preserve_readable_archives(self):
+        final = self.root / 'result.json'
+        final.write_text('old')
+        fake = types.SimpleNamespace(Exists=lambda p: Path(p).exists())
+        with patch.dict(sys.modules, {'arcpy': fake}):
+            with safety.WorkspaceLease(str(final)):
+                for value, name in [('new', 'result_overwrite.json'), ('latest', 'result_overwrite_2.json')]:
+                    publication = safety.Publication(str(final), overwrite=True, root=self.root)
+                    Path(publication.work).write_text(value)
+                    publication.publish()
+                    self.assertEqual(Path(publication.backup).name, name)
+                retired = safety.Publication(str(final), root=self.root, overwrite=True).retire()
+        self.assertEqual(Path(retired).name, 'result_delete_dataset.json')
+        self.assertEqual(Path(retired).read_text(), 'latest')
+        self.assertEqual((self.root / 'result_overwrite.json').read_text(), 'old')
+        self.assertEqual((self.root / 'result_overwrite_2.json').read_text(), 'new')
+        self.assertFalse(final.exists())
+
     def test_failed_output_is_quarantined_not_published(self):
         final = str(self.root / 'out.json')
         fake = types.SimpleNamespace(Exists=lambda p: Path(p).exists())

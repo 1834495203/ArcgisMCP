@@ -6,6 +6,7 @@ import configparser
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -114,12 +115,27 @@ def sibling(path, prefix):
     return str(p.with_name(prefix + uuid.uuid4().hex[:12] + p.suffix))
 
 
-def version_path(path):
+def version_path(path, operation='archive'):
+    """Choose a readable retained name; caller must hold the workspace lease.
+
+    Random names are reserved for internal staging. Existing versions are never overwritten.
+    """
     p = Path(path)
     # Feature classes can contain dots; only ordinary file extensions are retained.
     suffix = p.suffix if not any(x.suffix.lower() in ('.gdb', '.mdb') for x in p.parents) else ''
     stem = p.name[:-len(suffix)] if suffix else p.name
-    return str(p.with_name(stem[:100] + '_v_' + uuid.uuid4().hex[:12] + suffix))
+    label = re.sub(r'[^a-zA-Z0-9_]', '_', str(operation)).strip('_')[:48] or 'archive'
+    number = 1
+    while True:
+        tail = '_' + label + (f'_{number}' if number > 1 else '')
+        candidate = str(p.with_name(stem[:120 - len(tail)] + tail + suffix))
+        # An orphaned shapefile sidecar also reserves a basename; never replace it accidentally.
+        companions = ([str(Path(candidate).with_suffix(ext)) for ext in
+                       ('.dbf', '.shx', '.prj', '.cpg', '.sbn', '.sbx')] + [candidate + '.xml']
+                      if suffix.lower() == '.shp' else [])
+        if not path_exists(candidate) and not any(os.path.lexists(x) for x in [candidate] + companions):
+            return candidate
+        number += 1
 
 
 def move_dataset(source, destination):
@@ -203,7 +219,7 @@ class Publication:
             if path_exists(self.final):
                 if not self.overwrite:
                     raise WorkerError('发布目标已存在，拒绝覆盖：' + self.final)
-                self.backup = version_path(self.final)
+                self.backup = version_path(self.final, 'overwrite')
                 self.stage('backing_up')
                 move_dataset(self.final, self.backup)
                 self.stage('backed_up')
@@ -229,7 +245,7 @@ class Publication:
         """Remove the original name by archiving it, retaining the complete dataset."""
         if not path_exists(self.final):
             raise WorkerError('要删除的数据集不存在：' + self.final)
-        self.backup = version_path(self.final)
+        self.backup = version_path(self.final, 'delete_dataset')
         self.stage('retiring')
         move_dataset(self.final, self.backup)
         self.archives = [{'original_path': self.final, 'history_path': self.backup}]

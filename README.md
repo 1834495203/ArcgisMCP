@@ -134,6 +134,7 @@ job_result(job_id="返回的任务ID")
 ## 数据保护与链路
 
 - 编辑先复制再操作，保留原件，返回新版本；后续必须使用新路径。
+- 显式指定的输出名保持不变；复制编辑自动命名为 `原名_工具名`（如 `D_calculate_fields`），重名加 `_2`、`_3`。覆盖旧版归档为 `原名_overwrite`，删除归档为 `原名_delete_dataset`，同样按序号避让。内部暂存名仍使用随机串；已有历史文件不自动改名。
 - 产出写暂存路径，成功后发布。`overwrite=true` 归档旧目标后替换指定路径，默认拒绝覆盖。
 - `delete_dataset(confirm=true)` 归档原件并移除原路径；`delete_features` 在副本上删记录。
 - 每个 worker 串行执行，同一 GDB 的协作写操作使用工作区锁。ArcGIS Pro 和外部程序仍可能持有冲突锁。
