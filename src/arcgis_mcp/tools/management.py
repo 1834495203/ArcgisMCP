@@ -153,6 +153,8 @@ class CreateGdb(GeoProcessTool):
         out_features 要以 .gdb 结尾，例如 "./out/新成果.gdb"，所在目录会自动建。
         之后往这个库里写要素类时，直接写 "./out/新成果.gdb/要素类名" 即可
         （其实不建也能写，服务端会自动建缺的 gdb，这个工具用于需要显式创建的场景）。
+        一次流程复用一个输出库；已有库可直接使用，不要每个步骤建一个新库。
+        不要为了解决某个要素类重名或被锁而覆盖整个 GDB。
         """
         return self.run_geoprocess(ctx, in_features=[], out_features=out_features,
                                    params={"version": version}, overwrite=overwrite)
@@ -523,7 +525,7 @@ class RepairGeometry(EditTool):
 
 
 class DeleteDataset(EditTool):
-    """删除数据集（原地，不可逆）。"""
+    """归档删除数据集，移除原路径并保留历史。"""
 
     name = "delete_dataset"
     operation = "delete_dataset"
@@ -534,6 +536,8 @@ class DeleteDataset(EditTool):
         confirm 必须是 true 才会执行 —— 默认 false 会直接报错，避免误删。
         output / previous_output 是保留的历史数据路径，original_path_exists=false。
         不擦除历史数据；如需只删除部分记录，使用 delete_features。
+        删除库内要素类时，in_features 写成 ./results.gdb/要素类名，不要只传 .gdb。
+        归档仍可见是正常保留，不代表删除失败；出现锁错误时报告原文，不能通过新建库解决。
         """
         return self.run_edit(ctx, in_features=in_features,
                              params={"confirm": bool(confirm)}, label="要删除的数据集")
@@ -549,6 +553,7 @@ class DeleteFeatures(EditTool):
 
         where 为空表示删除副本中的全部记录；confirm=true 才执行。
         返回 source 是输入路径，output 是删除记录后的新版本。
+        本工具不会移除原要素类；要移除原路径请用 delete_dataset(confirm=true)。
         """
         return self.run_edit(ctx, in_features=in_features,
                              params={'where': where, 'confirm': bool(confirm)})

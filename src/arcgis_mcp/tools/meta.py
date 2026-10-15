@@ -106,6 +106,7 @@ class RunArcpyTool(Tool):
         **用法：先 describe_arcpy_tool 确认 execution.allowed=true，检查 constraints、参数名和取值。**
         参数名以 describe 的结果为准；编辑操作先复制，所有历史成果保留。
         优先使用固定封装。安全分类不保证所有参数组合或业务结果正确，仍需核验坐标系、单位和结果。
+        连续步骤复用同一输出 GDB，只换要素类名，不要每步创建新库或用新库绕过锁错误。
 
         参数
         ----

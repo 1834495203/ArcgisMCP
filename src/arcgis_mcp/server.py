@@ -20,7 +20,7 @@ from .core.worker import ArcPyWorker
 from .tools import ALL_TOOLS, register_all
 
 INSTRUCTIONS = """\
-本服务用本机 arcpy 读取 ArcGIS 数据（gdb / shapefile）。
+本服务用本机 arcpy 读取、处理 ArcGIS 数据，并保留整个数据集的加工链路。
 
 用法就是两步：
 
@@ -43,6 +43,22 @@ INSTRUCTIONS = """\
 告诉过服务端），那第 1 步可以跳过。
 
 读数据时的习惯：先用 limit=0 看表结构，再小 limit 抽样，需要更多就用 next_offset 翻页。
+
+工作库约定：同一个 GDB 支持连续处理并保存多个要素类；同一 worker 串行执行。
+优先复用用户指定的输出 GDB。用户未指定时，先查看已有数据源，选择一个工作库；
+需要隔离输入数据时可使用一个项目成果库。一次流程复用该库，不要每步新建 GDB。
+输出应写成 ./results.gdb/步骤名，例如 A、A_smooth、A_dissolve；换步骤只换要素类名。
+保留中间数据不等于复制整个 GDB。编辑操作会在输入同一 workspace 生成原名_操作名副本。
+只有请求输出所指的 GDB 不存在时才自动创建；不需要为每个工具预先调用 create_gdb。
+不要为了绕过输出重名、排队超时或锁错误而新建 GDB。重名换要素类名或明确使用 overwrite；
+任务返回 job_id 后先查 job_result，成功后使用实际 output；锁错误需关闭占用数据的图层/编辑会话或稍后重试。
+
+删除语义：delete_dataset(in_features="./results.gdb/要素类名", confirm=true)
+移除该要素类的原路径并保留归档，不物理擦除历史；不要把整个 .gdb 路径当作要素类路径。
+delete_features 则只在新副本里删除记录，原要素类仍存在，不能用于移除原要素类。
+归档保留不代表删除失败；遇到真实错误应报告 job_result 的原文，不要笼统声称 GDB 不支持删除。
+本服务不提供物理擦除历史成果的出口。CSV 导出可能在 .arcgis-mcp/scratch/ 下建立临时 GDB，
+正常结束会清理；这不是每一步都要创建新的业务 GDB。
 """
 
 _log = get_logger("server")

@@ -134,6 +134,10 @@ class Tool(ABC):
         if self.notice:
             parts.append(self.notice)
         if hasattr(self, 'operation'):
+            parts.append('【工作库】同一 GDB 可以连续写入多个要素类。优先复用用户指定的输出库，'
+                         '每步只换要素类名，不要每次新建 GDB，也不要靠建新库绕过锁或任务排队。'
+                         '除 create_gdb 建库工具外，数据集输出写成 ./results.gdb/要素类名，'
+                         '不能把 .gdb 本身当作要素类。')
             parts.append('【版本保留】编辑先复制再操作，输入原件保留；delete_dataset 会归档并移除原路径。'
                          '后续步骤必须使用本次返回的 output / out_features 实际路径。'
                          '返回 pending=true 时先用 job_result 获取完成结果。'

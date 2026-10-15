@@ -138,6 +138,7 @@ job_result(job_id="返回的任务ID")
 - 产出写暂存路径，成功后发布。`overwrite=true` 归档旧目标后替换指定路径，默认拒绝覆盖。
 - `delete_dataset(confirm=true)` 归档原件并移除原路径；`delete_features` 在副本上删记录。
 - 每个 worker 串行执行，同一 GDB 的协作写操作使用工作区锁。ArcGIS Pro 和外部程序仍可能持有冲突锁。
+- 同一个 GDB 可保存并连续处理多个要素类，例如 `results.gdb/A`、`results.gdb/A_smooth`；保留每步成果不需要每步新建 GDB。`delete_dataset` 移除原路径但保留归档，`delete_features` 只在副本删记录，不会移除原要素类。
 - `lineage(path=...)` 回溯来源，`lineage(path=..., downstream=true)` 查询下游，`explain(path=...)` 解释步骤和中间成果。
 
 项目运行状态保存在服务端 `<项目>/.arcgis-mcp/`：
