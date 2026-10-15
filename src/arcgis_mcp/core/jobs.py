@@ -18,11 +18,11 @@ class Jobs:
         self.thread = threading.Thread(target=self._run, name='arcgis-jobs', daemon=True)
         self.thread.start()
 
-    def submit(self, root, session, op, args, budget, wait_seconds, queue_timeout):
+    def submit(self, root, session, op, args, budget, wait_seconds, queue_timeout, policy=None):
         history = History(root)
         job_id, created = history.create(op, args, session, queue_timeout, reuse=True)
         done = threading.Event()
-        task = (history, job_id, op, args, budget, queue_timeout, time.monotonic(), done)
+        task = (history, job_id, op, args, budget, queue_timeout, time.monotonic(), done, policy or {})
         try:
             with self._state_lock:
                 if self._closed:
@@ -52,7 +52,7 @@ class Jobs:
             if task is None:
                 self.queue.task_done()
                 return
-            history, job_id, op, args, budget, queue_timeout, queued, done = task
+            history, job_id, op, args, budget, queue_timeout, queued, done, policy = task
             try:
                 if history.get(job_id)['state'] == 'failed':
                     continue
@@ -61,7 +61,7 @@ class Jobs:
                     history.update(job_id, 'failed', error='WorkerBusy：排队超时，操作未执行。')
                     continue
                 result = self.worker.call(op, timeout=budget * 2, queue_timeout=remaining,
-                    _audit={'root': str(history.root), 'job_id': job_id}, **args)
+                    _audit={'root': str(history.root), 'job_id': job_id, **policy}, **args)
                 # The worker commits history before emitting the response. Never overwrite it here.
                 if history.get(job_id)['state'] != 'succeeded':
                     history.update(job_id, 'unknown', result=result,
@@ -89,7 +89,7 @@ class Jobs:
                     task = self.queue.get_nowait()
                 except queue.Empty:
                     break
-                history, job_id, _, _, _, _, _, done = task
+                history, job_id, _, _, _, _, _, done, _ = task
                 try:
                     history.update(job_id, 'failed', error='服务关闭前尚未执行，任务已取消。')
                 finally:

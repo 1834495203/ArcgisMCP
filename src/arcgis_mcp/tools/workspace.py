@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..core.config import self_check
-from ..core.mcp_compat import Context
+from ..core.mcp_compat import Context, ToolError
 from ..core.tool import Tool
 
 
@@ -18,7 +18,8 @@ class UseProject(Tool):
 
     name = "use_project"
 
-    def use_project(self, ctx: Context, folder: str) -> str:
+    def use_project(self, ctx: Context, folder: str, output_gdb: Optional[str] = None,
+                    auto_create_gdb: Optional[bool] = None) -> str:
         """【通常第一个该调用的工具】把项目根目录告诉服务端。
 
         参数 folder：项目根目录的**绝对路径**，例如 "D:\\\\projects\\\\myproject"。
@@ -35,8 +36,19 @@ class UseProject(Tool):
         切换项目就再调一次本工具。
 
         调用时服务端会顺手扫描这个目录，把 *.gdb 和含 shapefile 的目录列出来（见返回值 sources）。
+        output_gdb: 可选，当前会话的默认输出 GDB，例如 ./工作.gdb；只选择，不在这里建库。
+            产出工具的裸名称如 D_smooth 会写入该库，显式路径不变；编辑仍在源所在库产生副本。
+        auto_create_gdb: 可选，false 禁止写输出时自动建缺失的库；需要时显式 create_gdb 一次。
+            这两个选择仅当前会话生效；持久化可配置项目 .arcgis-mcp/datasources.json。
         """
         view = self.switch_project(ctx, folder)
+        if output_gdb is not None or auto_create_gdb is not None:
+            try:
+                self.services.projects.set_output_policy(self.session_key(ctx), view.root,
+                                                          output_gdb, auto_create_gdb)
+            except ValueError as exc:
+                raise ToolError(str(exc)) from exc
+            view = self.view(ctx)
         self.trace(f"项目根目录已设为 {view.root}，扫到 {len(view.sources)} 个数据源", ctx)
 
         payload: Dict[str, Any] = {
@@ -46,6 +58,8 @@ class UseProject(Tool):
             "message": ("已记住项目根目录。之后 gdb / shp / folder 参数可以直接写 "
                         "./相对路径，例如 gdb=\"./data/City.gdb\"。"),
             "search_roots": [str(p) for p in view.settings.search_roots],
+            "output_workspace": str(view.settings.output_workspace) if view.settings.output_workspace else None,
+            "auto_create_gdb": view.settings.auto_create_gdb,
             "sources": [w.to_dict() for w in view.sources],
         }
         if view.problems:
@@ -83,6 +97,8 @@ class ListDataSources(Tool):
             "search_roots": [str(p) for p in view.settings.search_roots],
             "sources": [w.to_dict() for w in view.sources],
             "default_limit": view.settings.default_limit,
+            "output_workspace": str(view.settings.output_workspace) if view.settings.output_workspace else None,
+            "auto_create_gdb": view.settings.auto_create_gdb,
             "max_limit": view.settings.max_limit,
         }
         if view.project_config is not None:
@@ -126,6 +142,9 @@ class ArcGisStatus(Tool):
             "config_path": str(settings.config_path),
             **self.project_block(view),
         }
+        if view.root:
+            from ..core.ops.tabular import scratch_status
+            status['scratch'] = scratch_status(view.root)
         problems = self_check(settings)
         if problems:
             status["config_warnings"] = problems

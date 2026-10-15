@@ -59,6 +59,16 @@ delete_features 则只在新副本里删除记录，原要素类仍存在，不�
 归档保留不代表删除失败；遇到真实错误应报告 job_result 的原文，不要笼统声称 GDB 不支持删除。
 本服务不提供物理擦除历史成果的出口。CSV 导出可能在 .arcgis-mcp/scratch/ 下建立临时 GDB，
 正常结束会清理；这不是每一步都要创建新的业务 GDB。
+
+可用 use_project(output_gdb="./工作.gdb", auto_create_gdb=false, folder="项目绝对路径")
+为本会话选择默认工作库并禁止自动建库；库不存在时显式 create_gdb 一次。
+产出工具的裸数据集名会写入默认工作库；显式路径保持不变，CSV/Excel 等文件请显式给出库外路径。
+项目 .arcgis-mcp/datasources.json 的 output_workspace / auto_create_gdb 可持久化这些设置。
+lineage / explain 默认精简分页；通过 next_offset 继续，detail=true 取完整步骤。
+read_* / describe_data 默认只返回字段 name/type，schema_detail=true 获取完整字段结构。
+job_result(wait_seconds=5) 可短暂等待后台任务，不占 ArcPy 锁；detail=true 获取完整原始结果。
+工具成功表示执行及输出发布成功，不代表业务验收通过。面积差异、是否需要继续融合/消除，
+由调用方按任务要求自行查询和判断；MCP 不对要素数未减少或 where 零命中额外判错。
 """
 
 _log = get_logger("server")

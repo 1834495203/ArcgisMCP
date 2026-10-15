@@ -116,15 +116,24 @@ def ensure_output_container(out: str) -> Optional[str]:
             '例如 out_features="./out/结果.gdb/道路融合"'
         )
     parent = path.parent
-    if parent.name.lower().endswith(GDB_SUFFIXES):
-        # 栅格不能放进 .gdb，这里只处理要素类 / 表
-        if parent.suffix.lower() == ".mdb":
-            raise WorkerError(f"个人地理数据库（.mdb）不支持新建：{parent}")
-        if not parent.exists():
-            parent.parent.mkdir(parents=True, exist_ok=True)
-            arcpy.management.CreateFileGDB(str(parent.parent), parent.name)
-            return f"自动创建了地理数据库 {parent}"
-        return None
+    container = next((p for p in path.parents if p.suffix.lower() in GDB_SUFFIXES), None)
+    if container is not None:
+        from . import safety
+        if path.suffix.lower() in ('.csv', '.dbf', '.json', '.geojson', '.xlsx', '.xls', '.shp', '.tif', '.img', '.txt', '.pdf'):
+            raise WorkerError(f'文件格式输出必须位于 GDB 外的普通目录，不能写成库内文件：{out}')
+        if container.suffix.lower() == '.mdb':
+            raise WorkerError(f'个人地理数据库（.mdb）不支持新建：{container}')
+        created = None
+        if not path_exists(str(container)):
+            if not safety.AUTO_CREATE_GDB:
+                raise WorkerError(f'输出 GDB 不存在且 auto_create_gdb=false：{container}。'
+                                  '请复用已有库，或显式调用 create_gdb 创建一次；不要每步新建库。')
+            container.parent.mkdir(parents=True, exist_ok=True)
+            arcpy.management.CreateFileGDB(str(container.parent), container.name)
+            created = f'自动创建了地理数据库 {container}'
+        if parent != container and not path_exists(str(parent)):
+            raise WorkerError(f'GDB 中的要素数据集不存在，不会创建普通文件夹冒充：{parent}')
+        return created
     if not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)
         return f"自动创建了输出目录 {parent}"

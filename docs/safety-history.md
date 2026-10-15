@@ -31,9 +31,21 @@ explain(path=".../X.gdb/A_add_field_calculate_fields")
 
 项目内路径以相对形式展示，外部来源保留完整路径身份。归档替换后，既有链路的 inputs/outputs 和旧 job 的 output 会指向保留的实际文件；source/in_features 及原始调用参数保持当时的输入身份。每步包含独立 version_id 和输入版本引用；即使外部删除后复用同名路径，回溯也按执行时间选择当时的来源，避免把不同批次的链路混在一起。失败调用也保存，但不产生成功血统边。审计数据库不可写时拒绝开始写操作。原始输入由外部应用手工修改时，MCP 无法记录或阻止该变化，解释中会注明范围。
 
+`lineage` / `explain` 默认精简，保留步骤、输入输出、参数、时间和版本引用，不重复每步完整 schema/result；默认每页 20 步，`offset` / `limit` 翻页（最多 100）。`next_offset` 指示下一页，`truncated` 表示深度限制、`page_truncated` 表示还有下一页。`detail=true` 获取完整步骤，单步原始结果可用 `job_result(job_id, detail=true)` 查询；精简不改变存储的审计。
+
+工具成功表示执行及输出发布成功，不表示业务验收通过。面积差异、融合是否达到目标、零命中是否合理由调用方判断；不会自动全量计算面积或根据要素数未减少判错。实际读取/统计能力供 AI 按需使用。
+
+## 默认工作库
+
+`use_project(folder=..., output_gdb="./工作.gdb", auto_create_gdb=false)` 为当前会话选择默认工作库，不立即创建库；会话隔离，不影响其他客户端。关闭自动建库后，缺失 GDB 的输出请求报错，调用方可显式 `create_gdb` 一次。裸输出数据集名（例如 `A_smooth`）进入该库，显式相对/绝对路径保持不变；编辑仍在源所在工作区生成副本。
+
+需要跨会话保留时，在项目 `.arcgis-mcp/datasources.json` 配置 `"output_workspace": "./工作.gdb"`、`"auto_create_gdb": false`。默认未配置工作库、仍允许自动建库，以兼容已有调用。项目配置覆盖全局配置，会话选择再覆盖项目配置。文件格式如 CSV/Excel/Shapefile 必须使用 GDB 外的目录；不会创建普通文件夹冒充 GDB 要素数据集。
+
 ## 超时与队列
 
 写操作先登记任务，默认立即返回任务编号（job_wait_seconds=0）。如配置同步等待，最多等待 5 秒；未完成时返回 `pending=true` 和 `job_id`，客户端应查询结果而非再次提交。断开请求不会取消后台操作，迟到结果不会丢弃。通用工具的元数据查询和路径解析也在后台任务内进行，避免同步预检耗尽 30 秒客户端时限。同一项目、同一会话、相同参数的排队/启动/运行任务会复用同一个 job_id；完成后再次提交表示一次新的执行。
+
+`job_result(wait_seconds=0..5)` 可等待该任务短暂完成，不占 ArcPy 锁；等待到期仍返回实际状态，不把未完成任务判为失败。默认省略重复的调用 args 并精简结果的字段 schema，`detail=true` 恢复完整原始结果。`job_status` 只给状态，不重复任务结果和完整参数。
 
 执行预算默认：读/元数据 60 秒，普通写工具 300 秒，eliminate/union/intersect 1800 秒，dissolve 3600 秒。写操作硬上限为执行预算的两倍，达到上限才终止 worker，并记录 `unknown`。启动预算独立为 180 秒。排队默认最多 60 秒；读调用最多等待执行锁 5 秒。
 
@@ -78,11 +90,15 @@ ArcGIS Pro 不遵守本项目的协作锁，读图层仍可能占用 schema lock
 
 `frequency`、`summary_statistics`、`export_table` 的 CSV 默认 clean_csv=true：先在私有 GDB 表中处理，再流式写出单个 UTF-8 CSV，不生成 CSV XML 或 schema.ini。设置 clean_csv=false 可使用 ArcPy 原生输出和类型元数据；发布/归档时相应 schema.ini 节也会随文件名调整。需要字段类型保真时，直接将统计输出写到 `./结果.gdb/表名`；CSV 本身不携带字段类型。
 
+`zonal_statistics` 也支持同样的干净 CSV 输出，`check_geometry` 的 CSV 经同一流程导出。内部工作区带 `.mcp-scratch.json` 所有权标记，游标引用释放后清理，失败保留标记供后续写请求重试。`arcgis_status` 的 `scratch` 可查看清理错误与未标记旧目录数量；未标记旧目录不会被自动删除，成功版本不属于临时区。
+
+`read_gdb_data`、`read_shp_data` 和 `describe_data` 默认字段只回 `name` / `type`，`schema_detail=true` 返回长度、精度等完整字段元数据。`raster_to_polygon` 的 `raster_field` 是输入分类字段，实际输出名用 `output_value_field` 查询，可能为 `gridcode`；返回实际生效的简化/多部件选项，不擅自评价精度。矢量掩膜按像元中心取舍，不能等同于矢量边界精确裁剪。
+
 频数表一行表示所有分组字段的完整取值组合，FREQUENCY 表示输入中该组合的记录数；融合后每个组合只有一个要素时，全为 1 正常。
 
 消除后普通 AREA_MU 等属性不自动重算。返回值会提示先对新 output 重算面积，再按面积字段执行下一遍；eliminated_count 为实际减少的记录数，selected_count 为选中数，两者可能不同。
 
-`arcgis_status` 和工具结果中带 `data_policy_version=archive-replace-3`，用于识别旧进程。更新后应重启 MCP 服务及其 worker，避免混用旧版写入和命名语义。
+`arcgis_status` 和工具结果中带 `data_policy_version=archive-replace-4`，用于识别旧进程。更新后应重启 MCP 服务及其 worker，客户端重新连接刷新参数协议。
 
 ## 验证
 

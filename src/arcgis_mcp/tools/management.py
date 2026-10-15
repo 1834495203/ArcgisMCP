@@ -402,7 +402,7 @@ class CalculateFields(EditTool):
     def calculate_fields(self, ctx: Context, in_features: str, assignments: Dict[str, str],
                          where: Optional[str] = None, field_type: Optional[str] = None,
                          expression_type: str = "PYTHON3", code_block: Optional[str] = None) -> str:
-        """按条件批量给字段赋值（**原地修改**，一次可以赋多个字段）。
+        """复制后按条件批量给字段赋值；输入原件保留，一次可以赋多个字段。
 
         assignments: 「字段名 -> 表达式」，例如
             {"TL": "'草毡土'", "YL": "'薄草毡土'", "AREA_MU": "!Shape_Area! / 666.6667"}

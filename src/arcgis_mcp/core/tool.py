@@ -271,7 +271,9 @@ class Tool(ABC):
                         worker.jobs = Jobs(worker)
                     jobs = worker.jobs
                 result = jobs.submit(view.root, self.session_key(ctx), op, args, budget,
-                                     min(settings.job_wait_seconds, budget, 5), settings.queue_timeout)
+                                     min(settings.job_wait_seconds, budget, 5), settings.queue_timeout,
+                                     {'auto_create_gdb': settings.auto_create_gdb,
+                                      'output_workspace': str(settings.output_workspace) if settings.output_workspace else None})
             elif op == 'run_arcpy_code':
                 raise WorkerError('审计保留模式不允许任意 Python 代码绕过复制和锁；请使用固定工具或 run_arcpy_tool。')
             else:
@@ -281,7 +283,7 @@ class Tool(ABC):
             self.log.warning("arcpy.%s 失败（%.2fs）：%s", op, time.perf_counter() - started, exc)
             raise
         self.log.info("arcpy.%s 完成（%.2fs）%s", op, time.perf_counter() - started, brief(result))
-        return result
+        return self.compact_schema(result) if op in ('geoprocess', 'edit', 'run_arcpy_tool') else result
 
     # ------------------------------------------------------------------
     # 返回值处理
@@ -295,6 +297,20 @@ class Tool(ABC):
         if limit is None:
             return settings.default_limit
         return max(0, min(int(limit), settings.max_limit))
+
+    @staticmethod
+    def compact_schema(payload: Dict[str, Any], detail: bool = False) -> Dict[str, Any]:
+        """Keep field name/type, retaining the full schema only when explicitly requested."""
+        if detail:
+            return payload
+        result = dict(payload)
+        if isinstance(result.get('fields'), list):
+            result['fields'] = [{k: f[k] for k in ('name', 'type') if k in f}
+                                if isinstance(f, dict) else f for f in result['fields']]
+        if isinstance(result.get('outputs'), list):
+            result['outputs'] = [Tool.compact_schema(x) if isinstance(x, dict) else x
+                                 for x in result['outputs']]
+        return result
 
     @staticmethod
     def dumps(payload: Dict[str, Any]) -> str:

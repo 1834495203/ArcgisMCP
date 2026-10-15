@@ -74,6 +74,8 @@ class ProjectView:
             "project_config": str(self.project_config) if self.project_config else None,
             "project_config_exists": bool(self.project_config and self.project_config.is_file()),
             "search_roots": [str(p) for p in self.settings.search_roots],
+            "output_workspace": str(self.settings.output_workspace) if self.settings.output_workspace else None,
+            "auto_create_gdb": self.settings.auto_create_gdb,
             "sources": [w.to_dict() for w in self.sources],
             "problems": self.problems,
             "shadowed": self.shadowed,
@@ -199,6 +201,7 @@ class ProjectRegistry:
         self._views: Dict[str, Tuple[float, ProjectView]] = {}
         self._session: Dict[str, str] = {}
         self._lock = threading.RLock()
+        self._session_output = {}
 
     # ---- 会话级别的手动指定 ----
     def set_session_project(self, session_key: str, folder: str) -> ProjectView:
@@ -206,6 +209,8 @@ class ProjectRegistry:
         if not path.is_dir():
             raise NotADirectoryError(f"项目目录不存在：{path}")
         with self._lock:
+            if self._session.get(session_key) != str(path):
+                self._session_output.pop(session_key, None)
             self._session[session_key] = str(path)
             self._views.pop(str(path), None)
         return self.view(session_key=session_key)
@@ -218,6 +223,29 @@ class ProjectRegistry:
         with self._lock:
             self._views.clear()
 
+    def set_output_policy(self, session_key, root, output_gdb=None, auto_create_gdb=None):
+        changes = {}
+        if output_gdb is not None:
+            path = expand_path(output_gdb)
+            path = path if path.is_absolute() else root / path
+            if path.suffix.lower() != '.gdb':
+                raise ValueError('output_gdb 必须是 .gdb 路径；只选择工作库，不在此处创建。')
+            changes['output_workspace'] = path.resolve()
+        if auto_create_gdb is not None:
+            changes['auto_create_gdb'] = auto_create_gdb
+        with self._lock:
+            current = self._session_output.get(session_key, (None, {}))
+            policy = dict(current[1]) if current[0] == root else {}
+            policy.update(changes)
+            self._session_output[session_key] = (root, policy)
+
+    def _with_output_policy(self, view, session_key):
+        with self._lock:
+            root, changes = self._session_output.get(session_key, (None, {}))
+            if root == view.root and changes:
+                return dataclasses.replace(view, settings=dataclasses.replace(view.settings, **changes))
+        return view
+
     # ---- 主入口 ----
     def view(self, header: Optional[str] = None, session_key: Optional[str] = None) -> ProjectView:
         root, source, problems = self._detect(header, session_key)
@@ -226,12 +254,12 @@ class ProjectRegistry:
         with self._lock:
             cached = self._views.get(key)
             if cached and now - cached[0] < self.base.project_cache_ttl and not problems:
-                return cached[1]
+                return self._with_output_policy(cached[1], session_key)
         view = self._build(root, source)
         view.problems.extend(problems)
         with self._lock:
             self._views[key] = (now, view)
-        return view
+        return self._with_output_policy(view, session_key)
 
     def _detect(self, header: Optional[str],
                 session_key: Optional[str]) -> Tuple[Optional[Path], str, List[str]]:
@@ -320,7 +348,13 @@ class ProjectRegistry:
             if candidate not in roots:
                 roots.append(candidate)
 
-        settings = dataclasses.replace(base, workspaces=merged, search_roots=roots)
+        output_workspace = project_cfg.output_workspace or base.output_workspace
+        if output_workspace is not None and not output_workspace.is_absolute() and root is not None:
+            output_workspace = root / output_workspace
+        settings = dataclasses.replace(base, workspaces=merged, search_roots=roots,
+            output_workspace=output_workspace,
+            auto_create_gdb=(project_cfg.auto_create_gdb if project_cfg.auto_create_gdb is not None
+                             else base.auto_create_gdb))
         sources = sorted(merged.values(), key=lambda w: (w.origin != "project", w.origin != "auto", w.alias))
 
         return ProjectView(

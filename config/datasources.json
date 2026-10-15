@@ -19,6 +19,8 @@
   "arcpy_python": "D:\\software\\arcgispro\\bin\\Python\\envs\\arcgispro-py3\\python.exe",
   "search_roots": [],
   "allow_absolute_paths": true,
+  "output_workspace": null,
+  "auto_create_gdb": true,
   "recursive_search_depth": 3,
   "auto_discover": true,
   "auto_discover_depth": 3,

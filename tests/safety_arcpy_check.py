@@ -13,7 +13,10 @@ from arcgis_mcp.core.project import ProjectRegistry
 from arcgis_mcp.core.tool import Services, Tool
 from arcgis_mcp.core.worker import ArcPyWorker
 from arcgis_mcp.core.history import History
-from arcgis_mcp.tools.history import Explain
+from arcgis_mcp.tools.history import Explain, JobResult
+from arcgis_mcp.tools.workspace import UseProject
+from arcgis_mcp.tools.management import CopyFeatures
+from arcgis_mcp.tools.gdb import ReadGdbData
 
 
 class Probe(Tool):
@@ -38,9 +41,7 @@ def main():
             assert condition, label
             checks.append(label)
             print('PASS', label, flush=True)
-        def write(op, **args):
-            result = probe.arcpy(op, ctx=ctx, **args)
-            check('write returns job_id', bool(result.get('job_id')))
+        def completed(result):
             deadline = time.monotonic() + 150
             while result.get('pending') and time.monotonic() < deadline:
                 snapshot = History(root).get(result['job_id'])
@@ -52,11 +53,26 @@ def main():
             assert not result.get('pending'), 'job failed to finish'
             assert result.get('ok') is not False, result
             return result
+        def write(op, **args):
+            result = probe.arcpy(op, ctx=ctx, **args)
+            check('write returns job_id', bool(result.get('job_id')))
+            return completed(result)
         try:
             gdb = str(root / 'test.gdb')
             write('geoprocess', operation='create_gdb', inputs=[], output=gdb)
             original = write('geoprocess', operation='create_feature_class', inputs=[],
                 output=gdb + '/original', params={'geometry_type': 'POINT', 'spatial_reference': 4326})['output']
+            chosen = json.loads(UseProject(services).use_project(ctx, str(root),
+                output_gdb='./test.gdb', auto_create_gdb=False))
+            check('selected output workspace exposed', chosen['output_workspace'] == gdb and chosen['auto_create_gdb'] is False)
+            try:
+                write('geoprocess', operation='copy_features', inputs=[original], output=str(root/'unwanted.gdb/copy'))
+            except AssertionError as exc:
+                check('disabled automatic GDB creation fails explicitly', 'auto_create_gdb=false' in str(exc) and not (root/'unwanted.gdb').exists())
+            else:
+                raise AssertionError('unexpected GDB created')
+            same_library = completed(json.loads(CopyFeatures(services).copy_features(ctx, original, 'same_workspace_copy')))
+            check('bare output name reuses selected GDB', Path(same_library['output']) == Path(gdb) / 'same_workspace_copy')
             # Insert test features using a dedicated seed script, never arbitrary MCP code.
             seed = root / 'seed.py'
             seed.write_text("import arcpy,sys,os\np=sys.argv[1]\ngdb=os.path.dirname(p)\n"
@@ -137,6 +153,21 @@ def main():
                   sorted((r['Value'], r['Count']) for r in rat['records']) == [(0, 2), (1, 2)])
             rat_filtered = worker.call('read', workspace=gdb, dataset='classified', where='Value=1', limit=10)
             check('raster table where works', rat_filtered['matched_count'] == 1)
+            polygons = write('geoprocess', operation='raster_to_polygon', inputs=[gdb+'/classified'],
+                output=gdb+'/classified_polygons', params={'raster_field':'Value','simplify':False,'create_multipart':False})
+            check('raster classification field reported from real schema', polygons['output_value_field'].lower() == 'gridcode')
+            check('raster conversion returns effective options only', polygons['effective_parameters']['simplify'] is False and 'validation_status' not in polygons)
+            zonal_path = str(root/'zonal/zones.csv')
+            write('geoprocess', operation='zonal_statistics', inputs=[polygons['output'],gdb+'/classified'],
+                output=zonal_path, params={'zone_field':polygons['output_value_field'],'statistics_type':'ALL'})
+            check('zonal statistics exports single CSV', [p.name for p in Path(zonal_path).parent.iterdir()] == ['zones.csv'])
+            check_path = str(root/'geometry/check.csv')
+            write('geoprocess', operation='check_geometry', inputs=[original], output=check_path)
+            check('check geometry exports single CSV', [p.name for p in Path(check_path).parent.iterdir()] == ['check.csv'])
+            compact = json.loads(ReadGdbData(services).read_gdb_data(ctx, gdb, dataset='original', limit=0))
+            detailed = json.loads(ReadGdbData(services).read_gdb_data(ctx, gdb, dataset='original', limit=0, schema_detail=True))
+            check('read schema defaults to name and type', all(set(f) <= {'name','type'} for f in compact['fields']))
+            check('full field metadata remains available', any('length' in f for f in detailed['fields']))
             rat_export = write('run_arcpy_tool', tool='TableToTable_conversion', parameters={
                 'in_rows': './test.gdb/classified', 'out_path': './rat_export', 'out_name': 'classes.dbf'})
             check('TableToTable relative workspace resolves', Path(rat_export['outputs'][0]['path']).exists())
@@ -152,11 +183,12 @@ def main():
             native = write('geoprocess', operation='frequency', inputs=[calculated], output=gdb + '/frequency',
                            params={'frequency_field': ['CATEGORY']})
             check('GDB table output remains supported', native['record_count'] == 2)
+            check('CSV scratch directories are removed while worker remains alive', list((root/'.arcgis-mcp/scratch').glob('mcpwork_csv_*')) == [])
             history = History(root).lineage(repeated['previous_output'])
             check('history includes all processing steps', len(history['steps']) == 4)
             check('history has no internal names', 'mcpwork_' not in json.dumps(history))
             explained = json.loads(Explain(services).explain(ctx, out))
-            check('explain lists retained results', out.replace('\\', '/') in json.dumps(explained).replace('\\\\', '/'))
+            check('explain lists retained results', Path(out).relative_to(root).as_posix() in explained['explanation'])
             items = worker.call('list_datasets', workspace=gdb)['items']
             check('listing hides internal work', all(not i['name'].startswith('mcpwork_') for i in items))
             shp = str(root / 'points.shp')

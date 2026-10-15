@@ -454,6 +454,9 @@ def resolve_input_path(value: str, settings: Settings, label: str = "输入数�
         if candidate.exists() or _inside_gdb(candidate):
             return candidate
 
+    if settings.output_workspace is not None and p.name == raw and not p.suffix:
+        return settings.output_workspace / p  # Actual existence is checked by ArcPy in the worker.
+
     pool = [
         c.name for root in settings.search_roots
         for c in _walk_files(Path(root), settings.recursive_search_depth, SHP_SUFFIX)
@@ -495,6 +498,8 @@ def resolve_output_path(value: str, settings: Settings, label: str = "输出路�
     p = Path(raw)
     if p.is_absolute():
         return p
+    if settings.output_workspace is not None and p.name == raw and not p.suffix:
+        return settings.output_workspace / p
     roots = list(settings.search_roots)
     if not roots:
         raise ResolutionError(

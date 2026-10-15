@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .common import WorkerError, field_names, path_exists, unique_name
+from .tabular import table_output
 
 OPERATIONS: Dict[str, Dict[str, Any]] = {}
 
@@ -86,7 +87,8 @@ def _check_geometry(inputs: List[str], out: str,
     import arcpy
 
     validation = str(params.get("validation_method") or "ESRI").upper()
-    arcpy.management.CheckGeometry(inputs[0], out, validation)
+    with table_output(out) as table:
+        arcpy.management.CheckGeometry(inputs[0], table, validation)
 
 
 def _create_gdb(inputs: List[str], out: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:

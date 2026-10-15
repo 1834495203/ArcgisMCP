@@ -115,6 +115,20 @@ job_result(job_id="返回的任务ID")
 
 任务成功后，用 `result.output` 或 `result.outputs` 中的实际路径继续下一步。`queued` / `running` 时继续查询，不要重复提交；`failed` / `unknown` 时先检查错误和恢复记录。客户端超时不代表后台任务停止。
 
+可用 `job_result(job_id="...", wait_seconds=5)` 短暂等待，减少轮询。默认精简字段元数据，`detail=true` 查看完整原始结果。
+
+需要固定工作库时，可以这样选择（只影响当前会话，不在此处建库）：
+
+```python
+use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gdb=False)
+```
+
+若库不存在，先显式调用 `create_gdb(out_features="./工作.gdb")` 并等待完成；之后产出工具的 `out_features="A_smooth"` 等裸名称写入该库，每步只换要素类名。显式路径不变，CSV/Excel 等文件仍写库外目录。跨会话配置可写入项目 `.arcgis-mcp/datasources.json`：
+
+```json
+{"output_workspace": "./工作.gdb", "auto_create_gdb": false}
+```
+
 ## 主要功能
 
 | 类别 | 示例工具 |
@@ -128,6 +142,8 @@ job_result(job_id="返回的任务ID")
 | 历史与任务 | `lineage`、`explain`、`job_status`、`job_result` |
 
 具体参数以客户端获取的工具说明为准。`read_gdb_data` 支持要素类、表，以及已有属性表的整数分类栅格；不自动建立源栅格属性表。
+
+`read_*` / `describe_data` 的字段默认仅返回名称与类型，`schema_detail=true` 查看完整结构。`lineage` / `explain` 默认精简分页，用 `next_offset` 继续、`detail=true` 查看完整步骤。`zonal_statistics` 支持 GDB 表、DBF 和干净 CSV。栅格转面的实际分类字段通过 `output_value_field` 获取，不假定与输入字段同名。
 
 固定工具不足时，可用 `list_arcpy_tools` 搜索、`describe_arcpy_tool` 查询参数。只有 `execution.allowed=true` 的工具才能尝试通过 `run_arcpy_tool` 执行，仍需遵守返回的参数与输出限制。搜索数量不等于可执行数量，也不代表所有参数组合均已实测；未适配工具拒绝执行，任意 ArcPy 代码执行入口禁用。
 
@@ -153,6 +169,8 @@ job_result(job_id="返回的任务ID")
 
 当前适合可信本机使用的 Beta 场景。文件发布与审计提交之间的中断对账尚未完善；复杂关联数据的复制编辑会被拒绝。HTTP 未提供应用层用户鉴权，不应直接暴露公网。完整规则、超时和恢复边界见 [数据安全与操作历史](docs/safety-history.md)。
 
+**MCP 负责执行正确、输出可用和数据保护；业务验证由 AI/调用方负责。** 不会因融合数量没减少或条件零命中判失败，也不会自动按业务阈值核验面积；需要时由 AI 调用读取、统计工具检查。
+
 ## 开发者如何扩展工具
 
 先读 [AGENTS.md](AGENTS.md) 和 [工具扩展指南](docs/extending-tools.md)。后者提供代码示例、参数约定、注册步骤和测试要求。
@@ -172,6 +190,7 @@ job_result(job_id="返回的任务ID")
 
 ```powershell
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_safety.py
+.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_execution_contracts.py
 .venv/Scripts/python.exe -X utf8 tests/test_project.py
 .venv/Scripts/python.exe -X utf8 tests/test_resolver.py
 ```

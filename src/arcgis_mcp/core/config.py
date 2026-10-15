@@ -108,6 +108,8 @@ class Settings:
     arcpy_python: str = DEFAULT_ARCPY_PYTHON
     search_roots: List[Path] = field(default_factory=list)
     allow_absolute_paths: bool = True
+    output_workspace: Optional[Path] = None
+    auto_create_gdb: bool = True
     default_limit: int = 100
     max_limit: int = 2000
     max_response_bytes: int = 1_000_000
@@ -158,6 +160,8 @@ class Settings:
             "arcpy_python_exists": self.arcpy_python_path.exists(),
             "search_roots": [str(p) for p in self.search_roots],
             "allow_absolute_paths": self.allow_absolute_paths,
+            "output_workspace": str(self.output_workspace) if self.output_workspace else None,
+            "auto_create_gdb": self.auto_create_gdb,
             "default_limit": self.default_limit,
             "max_limit": self.max_limit,
             "recursive_search_depth": self.recursive_search_depth,
@@ -276,6 +280,8 @@ def load_settings(config_path: Optional[Union[str, os.PathLike]] = None) -> Sett
         ),
         search_roots=_parse_roots(raw.get("search_roots")),
         allow_absolute_paths=bool(raw.get("allow_absolute_paths", True)),
+        output_workspace=_parse_optional_path(raw.get('output_workspace')),
+        auto_create_gdb=bool(raw.get('auto_create_gdb', True)),
         default_limit=int(limits.get("limit", 100)),
         max_limit=int(limits.get("max_limit", 2000)),
         max_response_bytes=int(limits.get("max_response_bytes", 1_000_000)),
@@ -307,6 +313,10 @@ def load_settings(config_path: Optional[Union[str, os.PathLike]] = None) -> Sett
             raise ConfigError(key + ' 必须是大于 0 的有限秒数')
     if not math.isfinite(settings.job_wait_seconds) or settings.job_wait_seconds < 0:
         raise ConfigError('job_wait_seconds 必须是大于等于 0 的有限秒数')
+    if 'auto_create_gdb' in raw and not isinstance(raw['auto_create_gdb'], bool):
+        raise ConfigError('auto_create_gdb 必须是布尔值')
+    if settings.output_workspace and settings.output_workspace.suffix.lower() != '.gdb':
+        raise ConfigError('output_workspace 必须是 .gdb 路径')
     if any(not math.isfinite(v) or v <= 0 for v in settings.tool_timeouts.values()):
         raise ConfigError('tool_timeouts 中的秒数必须大于 0 且有限')
     return settings
@@ -354,7 +364,23 @@ def load_project_config(path: Path, base_dir: Optional[Path] = None) -> "Project
         roots = [_resolve_against_base(p, base_dir) for p in _parse_roots(raw.get("search_roots"))]
     except ConfigError as exc:
         problems.append(f"项目配置 search_roots 有问题：{exc}")
-    return ProjectConfig(path=path, workspaces=workspaces, search_roots=roots, problems=problems)
+    output_workspace = None
+    auto_create_gdb = None
+    try:
+        if raw.get('output_workspace') is not None:
+            output_workspace = _resolve_against_base(expand_path(raw['output_workspace']), base_dir)
+            if output_workspace.suffix.lower() != '.gdb':
+                raise ConfigError('output_workspace 必须是 .gdb 路径')
+    except ConfigError as exc:
+        output_workspace = None
+        problems.append(f'项目输出配置有问题：{exc}')
+    if 'auto_create_gdb' in raw:
+        if isinstance(raw['auto_create_gdb'], bool):
+            auto_create_gdb = raw['auto_create_gdb']
+        else:
+            problems.append('项目输出配置有问题：auto_create_gdb 必须是布尔值')
+    return ProjectConfig(path=path, workspaces=workspaces, search_roots=roots, problems=problems,
+                         output_workspace=output_workspace, auto_create_gdb=auto_create_gdb)
 
 
 @dataclass
@@ -363,6 +389,8 @@ class ProjectConfig:
     workspaces: Dict[str, Workspace] = field(default_factory=dict)
     search_roots: List[Path] = field(default_factory=list)
     problems: List[str] = field(default_factory=list)
+    output_workspace: Optional[Path] = None
+    auto_create_gdb: Optional[bool] = None
 
     @property
     def exists(self) -> bool:

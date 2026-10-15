@@ -612,7 +612,11 @@ def op_geoprocess(operation: str, inputs=None, output=None, params=None, overwri
     with safety.WorkspaceLease(out):
         publication = safety.Publication(out, overwrite, safety.CURRENT_ROOT)
         with arcpy.EnvManager(overwriteOutput=False):
-            result = _op_geoprocess(operation, inputs, publication.work, params, False)
+            try:
+                result = _op_geoprocess(operation, inputs, publication.work, params, False)
+            except WorkerError as exc:
+                message = str(exc).replace(publication.work, out)
+                raise WorkerError(f'请求输出：{out}\n{message}') from exc
             actual = result.get('output', publication.work)
             final = publication.publish(actual)
         result['output'] = final
@@ -773,9 +777,13 @@ def main() -> int:
             with contextlib.redirect_stdout(sys.stderr):
                 safety.CURRENT_ROOT = audit['root'] if audit else None
                 safety.CURRENT_JOB = audit['job_id'] if audit else None
+                safety.AUTO_CREATE_GDB = audit.get('auto_create_gdb', True) if audit else True
+                safety.OUTPUT_WORKSPACE = audit.get('output_workspace') if audit else None
                 if audit:
                     history = History(audit['root'])
                     safety.recover(audit['root'])
+                    from ops.tabular import cleanup_scratch
+                    scratch_cleanup = cleanup_scratch(audit['root'])
                     history.update(audit['job_id'], 'running')
                 import arcpy
                 # Arbitrary prior environments must not silently clip/filter later jobs.
@@ -783,6 +791,8 @@ def main() -> int:
                 # Keep workspace locks through the logical audit commit, including path relocation.
                 safety.DEFER_LEASE_RELEASE = bool(audit)
                 result = handler(**args)
+                if audit and scratch_cleanup['pending']:
+                    result['scratch_cleanup'] = scratch_cleanup
                 result.setdefault('data_policy_version', DATA_POLICY_VERSION)
                 if audit:
                     inputs = result.get('inputs', [])

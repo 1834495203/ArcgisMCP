@@ -112,6 +112,8 @@ class PairwiseBuffer(GeoProcessTool):
 
 ## 参数、结果与 AI 使用协议
 
+- MCP 只判定执行契约和数据安全，不以面积变化、融合数量或零命中判定业务成败；不要新增 `validation_status` 一类业务验收状态。需要业务核验时由 AI 选择只读统计/读取工具；参数单位、像元中心规则、简化等算法语义必须明确说明。
+- 项目/会话可指定 `output_workspace` 并关闭 `auto_create_gdb`。固定产出工具复用 resolver，通用调用在 worker 解析元数据；裸名称进入默认 GDB，显式路径不改写。文件导出必须使用库外的显式路径，不能把 CSV/Excel/Shapefile 当 GDB 内部文件。
 - 方法签名使用明确的类型、默认值和中文 docstring；说明 SQL、单位、坐标系、空输入以及格式限制。
 - `operation` 是 worker 操作名，可能与 MCP 的 `name` 不同，例如 `update_features` 对应 `update`；确认两端一致。
 - 需要较长预算可设置工具类 `timeout`，或配置 `tool_timeouts`。当前写操作硬上限为预算两倍；提高超时不能替代 job 查询或修复锁问题。
@@ -121,6 +123,8 @@ class PairwiseBuffer(GeoProcessTool):
 - 普通面积字段不会因几何改变自动重算；涉及消除、融合等操作时说明影响，不伪造新面积。
 - CSV 产出参考 `core/ops/tabular.py` 的 `table_output`，避免绕过已有 sidecar 管理。字段类型保真优先使用 GDB 表。
 - 不新建自定义日志替代 `History`；失败任务保留错误，成功输入/输出进入链路。外部手工修改不在自动记录范围内。
+- 默认查询字段仅回 name/type；`schema_detail=true` 获取完整 schema。链路默认精简分页，`detail=true` 可取完整结果，完整审计仍保存于 SQLite，不随精简而丢失。`job_result(wait_seconds=...)` 的等待最多 5 秒，不占 worker 锁，不重放任务。
+- `table_output` 将游标引用限制在独立导出函数中，释放后清理缓存及临时库。清理失败保留标记，后续写请求在获取临时库锁后重试；不得删除未标记目录或通过清理工作区移除成功成果。
 
 ## 验证与交付
 
@@ -129,11 +133,14 @@ class PairwiseBuffer(GeoProcessTool):
 ```powershell
 .venv/Scripts/python.exe -X utf8 -m compileall -q src tests
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_safety.py
+.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_execution_contracts.py
 .venv/Scripts/python.exe -X utf8 tests/test_project.py
 .venv/Scripts/python.exe -X utf8 tests/test_resolver.py
 ```
 
 `test_project.py` 和 `test_resolver.py` 是脚本检查，不能用 unittest 的发现数量代替它们的执行。若运行环境限制系统临时目录，可把测试临时目录指定到独立可写的测试位置；不能因此改写真实项目数据。
+
+无 ArcPy 的真实 stdio 协议检查：`.venv/Scripts/python.exe -X utf8 tests/contracts_mcp_check.py`，会自行启动服务并仅使用临时项目，验证新参数 schema 与查询返回。
 
 具备 ArcGIS Pro、有效 ArcPy 环境和相应工具许可时执行：
 

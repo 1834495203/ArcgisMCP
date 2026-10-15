@@ -17,6 +17,8 @@ from .common import WorkerError, path_exists
 PREFIX = 'mcpwork_'
 CURRENT_ROOT = None  # Worker protocol is serial; scoped/reset for every request.
 CURRENT_JOB = None
+AUTO_CREATE_GDB = True
+OUTPUT_WORKSPACE = None
 DEFER_LEASE_RELEASE = False
 CURRENT_LEASES = {}
 

@@ -10,7 +10,7 @@ import contextlib
 import hashlib
 from pathlib import Path
 
-DATA_POLICY_VERSION = 'archive-replace-3'
+DATA_POLICY_VERSION = 'archive-replace-4'
 
 
 def canonical(path):
@@ -198,7 +198,7 @@ class History:
         except ValueError:
             return str(path)
 
-    def lineage(self, path, depth=30, downstream=False):
+    def lineage(self, path, depth=30, downstream=False, detail=True, offset=0, limit=None):
         depth = max(0, min(int(depth), 100))
         frontier = [(canonical(path), 0, time.time())]
         seen, steps, roots = set(), {}, set()
@@ -250,8 +250,26 @@ class History:
                     frontier.extend((p, level + 1, item['finished'] if downstream else input_time)
                                     for p in (outputs if downstream else inputs))
         ordered = sorted(steps.values(), key=lambda item: item['started'] or item['created'])
+        total = len(ordered)
+        offset = max(0, int(offset))
+        page_limit = total if limit is None else max(1, min(100, int(limit)))
+        ordered = ordered[offset:offset + page_limit]
+        if not detail:
+            compact = []
+            for item in ordered:
+                payload = item.get('result') or {}
+                args = item.get('args') or {}
+                compact.append({**{key: item[key] for key in ('job_id', 'version_id', 'state',
+                    'created', 'started', 'finished', 'inputs', 'outputs', 'input_versions')},
+                    'operation': payload.get('operation_summary') or payload.get('tool') or
+                                 args.get('operation') or item['op'],
+                    'params': payload.get('params') or payload.get('parameters') or args.get('params') or {}})
+            ordered = compact
+        next_offset = offset + len(ordered) if offset + len(ordered) < total else None
         return {'path': self.display(canonical(path)), 'steps': ordered,
                 'roots': [self.display(p) for p in sorted(roots)], 'depth': depth,
                 'direction': 'downstream' if downstream else 'upstream',
                 'truncated': truncated,
+                'total_steps': total, 'returned': len(ordered), 'offset': offset,
+                'next_offset': next_offset, 'page_truncated': next_offset is not None,
                 'note': '外部手工修改不在审计范围；未记录的来源作为链路起点。'}

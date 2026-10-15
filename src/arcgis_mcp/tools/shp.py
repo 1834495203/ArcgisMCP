@@ -76,6 +76,7 @@ class ReadShpData(Tool):
         offset: int = 0,
         geometry: str = "none",
         order_by: Optional[str] = None,
+        schema_detail: bool = False,
     ) -> str:
         """读取 shapefile 的数据，返回表结构 + 属性记录。
 
@@ -92,6 +93,7 @@ class ReadShpData(Tool):
         limit: 返回条数上限，默认取服务端配置；limit=0 只返回表结构与计数。
         offset: 跳过前 N 条，配合 limit 翻页。
         geometry: "none"（默认）/ "wkt" / "xy"。
+        schema_detail: 默认 false，仅返回字段 name/type；true 返回长度、精度等完整字段结构。
         order_by: 可选排序，例如 "LANES DESC"。
 
         返回
@@ -139,4 +141,4 @@ class ReadShpData(Tool):
                 f"limit 被限制为 {effective_limit}（服务端上限 {settings.max_limit}）"
             )
         self.pagination_hint(payload, offset, result)
-        return self.dumps(self.shrink(payload, view))
+        return self.dumps(self.shrink(self.compact_schema(payload, schema_detail), view))

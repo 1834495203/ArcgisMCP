@@ -322,6 +322,9 @@ def op_run_arcpy_tool(tool: str, parameters=None, output_parameters=None,
         if os.path.isabs(value):
             return os.path.normpath(value)
         container = any(t in datatype for t in ('workspace', 'folder', '工作空间', '文件夹'))
+        if (str(parameter.direction).lower() == 'output' and safety.OUTPUT_WORKSPACE
+                and Path(value).name == value and not Path(value).suffix):
+            return os.path.normpath(os.path.join(safety.OUTPUT_WORKSPACE, value))
         if (container or '/' in value or '\\' in value or Path(value).suffix or
                 os.path.exists(os.path.join(root, value))):
             return os.path.normpath(os.path.join(root, value))
@@ -461,7 +464,7 @@ def op_run_arcpy_tool(tool: str, parameters=None, output_parameters=None,
             publications.append(publication)
         with ExitStack() as tables:
             for (key, _), p in zip(outputs, publications):
-                if lower in ('frequency_analysis', 'statistics_analysis', 'copyrows_management'):
+                if lower in ('frequency_analysis', 'statistics_analysis', 'copyrows_management', 'checkgeometry_management'):
                     params[key] = tables.enter_context(table_output(p.work))
             with arcpy.EnvManager(overwriteOutput=False):
                 getattr(arcpy, name)(**params)

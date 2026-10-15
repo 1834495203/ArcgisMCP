@@ -20,12 +20,13 @@ class DescribeData(Tool):
     name = "describe_data"
     needs_project = True
 
-    def describe_data(self, ctx: Context, dataset: str) -> str:
+    def describe_data(self, ctx: Context, dataset: str, schema_detail: bool = False) -> str:
         """查看任意数据集的元信息：类型、几何、记录数、坐标系、范围、字段列表；
         栅格还会给出波段数、像元大小、像元类型、压缩方式。
+        schema_detail 默认 false，仅返回字段 name/type；true 返回完整字段结构。
 
         什么时候用它：
-        - 想知道一个栅格的分辨率 / 波段数（用 read_* 读不了栅格）；
+        - 想知道栅格分辨率 / 波段数；read_gdb_data 可读已有属性表，不返回像元数组；
         - 想确认数据有没有坐标系、是点还是面，而不用把记录读出来；
         - 想快速看字段名（等价于 read_shp_data 的 limit=0，但矢量栅格通用）。
 
@@ -41,7 +42,7 @@ class DescribeData(Tool):
             result = self.arcpy("describe", ctx=ctx, path=str(path))
         except WorkerError as exc:
             return self.error("ArcPyError", exc, view, dataset=str(path))
-        return self.dumps({"ok": True, **self.project_block(view), **result})
+        return self.dumps({"ok": True, **self.project_block(view), **self.compact_schema(result, schema_detail)})
 
 
 class RasterToPolygon(GeoProcessTool):
@@ -60,7 +61,8 @@ class RasterToPolygon(GeoProcessTool):
         out_features: 输出面要素路径，例如 "./out/栅格面.shp"。
             注意**输出是 shapefile 时没有面积字段**，要按面积筛选得先 add_field + calculate_fields。
         simplify: 默认 true，简化边界（更平滑但不严格贴合像元）。
-        raster_field: 用栅格属性表里的哪个字段当分类依据（输出字段名就是它，默认 gridcode）。
+        raster_field: 输入栅格属性表中用于分类的字段，不保证输出同名。
+            结果的 output_value_field 返回实际分类字段名，常见为 gridcode；不要猜字段名。
         create_multipart: 默认 true；false 则同一值的**不相邻**区域拆成多个面。
         max_vertices: 单个面最多顶点数，用于限制超大面。
         """
@@ -160,6 +162,7 @@ class ExtractByMask(GeoProcessTool):
 
         in_raster: 要提取的栅格；mask: 掩膜数据（面要素或栅格）；
         extraction_area: INSIDE（默认，留掩膜内）/ OUTSIDE（留掩膜外）。
+        矢量掩膜按像元中心判定归属，不是矢量边界精确裁剪；是否满足业务精度由调用方核验。
         """
         return self.run_geoprocess(ctx, in_features=[in_raster, mask], out_features=out_features,
                                    params={"extraction_area": extraction_area},
@@ -242,7 +245,7 @@ class ZonalStatistics(GeoProcessTool):
 
     def zonal_statistics(self, ctx: Context, in_features: str, in_value_raster: str,
                          out_features: str, zone_field: str, statistics_type: str = "ALL",
-                         overwrite: bool = False) -> str:
+                         overwrite: bool = False, clean_csv: bool = True) -> str:
         """按分区矢量统计栅格值，输出统计表（每个区一行，带统计结果列）。
 
         in_features: 分区矢量（面）；zone_field: **必填**，标识每个区的字段，例如 "NAME"。
@@ -250,9 +253,11 @@ class ZonalStatistics(GeoProcessTool):
         statistics_type: ALL（默认，输出全部统计量）/ MEAN / SUM / MAXIMUM / MINIMUM /
             MAJORITY / MEDIAN / RANGE / STD / VARIETY / MINORITY。
         用途：每个行政区的平均高程、每个地块的平均坡度这类统计。
+        out_features: GDB 表、DBF 或 CSV 路径。CSV 默认通过临时 GDB 表导出单个 UTF-8 文件；
+            clean_csv=false 使用 ArcPy 原生输出，格式限制由 ArcPy 决定。
         """
         return self.run_geoprocess(ctx, in_features=[in_features, in_value_raster],
                                    out_features=out_features,
                                    params={"zone_field": zone_field,
-                                           "statistics_type": statistics_type},
+                                           "statistics_type": statistics_type, "clean_csv": bool(clean_csv)},
                                    overwrite=overwrite)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from .common import WorkerError, unique_name
+from .tabular import table_output
 
 OPERATIONS: Dict[str, Dict[str, Any]] = {}
 
@@ -37,6 +38,15 @@ def _raster_to_polygon(inputs: List[str], out: str,
     max_vertices = params.get("max_vertices")
     arcpy.conversion.RasterToPolygon(inputs[0], out, simplify, params.get("raster_field"),
                                      multipart, int(max_vertices) if max_vertices else None)
+    names = [field.name for field in arcpy.ListFields(out)]
+    candidates = [params.get('raster_field'), 'gridcode', 'grid_code']
+    value_field = next((name for candidate in candidates if candidate
+                        for name in names if name.lower() == str(candidate).lower()), None)
+    return {'output_value_field': value_field,
+            'effective_parameters': {'simplify': simplify == 'SIMPLIFY',
+                'create_multipart': multipart == 'MULTIPLE_OUTER_PART',
+                'raster_field': params.get('raster_field') or 'Value'},
+            'field_note': 'output_value_field 无法识别时请读取实际 fields；输入分类字段不保证输出同名。'}
 
 
 def _raster_to_point(inputs: List[str], out: str,
@@ -124,6 +134,8 @@ def _extract_by_mask(inputs: List[str], out: str,
         raise WorkerError(f"extraction_area 只能是 INSIDE（掩膜内）/ OUTSIDE（掩膜外），收到 {area!r}")
     result = arcpy.sa.ExtractByMask(inputs[0], inputs[1], area)
     result.save(out)
+    return {'extraction_area': area,
+            'mask_semantics': '矢量掩膜按像元中心取舍，不保证矢量边界完整覆盖；业务精度由调用方核验。'}
 
 
 def _copy_raster(inputs: List[str], out: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -182,9 +194,12 @@ def _zonal_statistics(inputs: List[str], out: str,
                "RANGE", "STD", "SUM", "VARIETY")
     if statistics_type not in allowed:
         raise WorkerError(f"statistics_type 只能是 {'/'.join(allowed)}，收到 {statistics_type!r}")
-    arcpy.sa.ZonalStatisticsAsTable(inputs[0], zone_field, inputs[1], out,
-                                    params.get("ignore_nodata", "DATA"),
-                                    statistics_type, params.get("process_as_multidimensional"))
+    with table_output(out, params.get('clean_csv', True)) as table:
+        arcpy.sa.ZonalStatisticsAsTable(inputs[0], zone_field, inputs[1], table,
+                                      params.get("ignore_nodata", "DATA"), statistics_type,
+                                      params.get("process_as_multidimensional"))
+    return {'clean_csv': params.get('clean_csv', True), 'zone_field': zone_field,
+            'statistics_type': statistics_type}
 
 
 register("raster_to_polygon", "栅格转面", _raster_to_polygon, min_inputs=1,
@@ -206,4 +221,4 @@ register("project_raster", "栅格投影转换", _project_raster, min_inputs=1,
          allowed={"spatial_reference", "resampling_type", "cell_size", "geographic_transform"})
 register("zonal_statistics", "分区统计（矢量分区 + 栅格值 → 统计表）", _zonal_statistics,
          min_inputs=2,
-         allowed={"zone_field", "statistics_type", "ignore_nodata", "process_as_multidimensional"})
+         allowed={"zone_field", "statistics_type", "ignore_nodata", "process_as_multidimensional", "clean_csv"})

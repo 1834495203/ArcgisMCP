@@ -63,6 +63,7 @@ class ReadGdbData(Tool):
         offset: int = 0,
         geometry: str = "none",
         order_by: Optional[str] = None,
+        schema_detail: bool = False,
     ) -> str:
         """读取地理数据库（gdb）里某个要素类或表的数据，返回表结构 + 属性记录。
 
@@ -84,6 +85,7 @@ class ReadGdbData(Tool):
              **limit=0 只返回表结构 + 计数，不返回记录**，适合先看 schema。
         offset: 跳过前 N 条记录，配合 limit 分页。
         geometry: "none"（默认，最快）/ "wkt"（WKT 文本）/ "xy"（坐标值）。
+        schema_detail: 默认 false，仅返回字段 name/type；true 返回长度、精度等完整字段结构。
         order_by: 可选排序，例如 "POP DESC"。
 
         返回
@@ -142,7 +144,7 @@ class ReadGdbData(Tool):
                 f"limit 被限制为 {effective_limit}（服务端上限 {settings.max_limit}）"
             )
         self.pagination_hint(payload, offset, result)
-        return self.dumps(self.shrink(payload, view))
+        return self.dumps(self.shrink(self.compact_schema(payload, schema_detail), view))
 
     # ------------------------------------------------------------------
     def _catalog(self, ctx: Context, view, gdb: str, path) -> str:
