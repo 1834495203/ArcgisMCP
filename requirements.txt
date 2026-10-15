@@ -1,0 +1,5 @@
+# MCP 服务端只需要官方 mcp SDK（运行在项目 .venv 的 Python 3.12 里）
+# arcpy 不需要装在这里：它由 ArcGIS Pro 自带的 Python 3.9 子进程提供
+mcp>=1.10
+# 工具基类用 anyio.from_thread.run 把日志从工作线程推回事件循环（mcp 已依赖它，这里显式声明）
+anyio>=4.9

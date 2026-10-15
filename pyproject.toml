@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcgis-mcp"
+version = "0.1.0"
+description = "基于 arcpy 的 MCP 工具服务：按别名读取 gdb / shapefile 数据"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.10", "anyio>=4.9"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

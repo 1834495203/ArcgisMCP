@@ -1,0 +1,21 @@
+.venv/
+build/
+__pycache__/
+*.pyc
+.idea/
+
+# Local project state, audit history and generated GIS data
+.arcgis-mcp/
+data/
+build_*/
+.safety-*/
+arcgis-mcp-proj-*/
+arcgis-mcp-decoy-*/
+
+# Packaging and local configuration
+dist/
+*.egg-info/
+.env
+.env.*
+!.env.example
+*.log

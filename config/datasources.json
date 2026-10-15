@@ -1,0 +1,43 @@
+{
+  "_readme": [
+    "arcgis-mcp 全局配置。改完保存后重启 MCP 服务即可生效。",
+    "",
+    "数据源是「项目作用域」的：AI 先调 use_project 指定项目根目录，之后参数都用",
+    "./ 相对路径。所以这里通常不需要写任何东西。",
+    "",
+    "本文件的 workspaces 用于「跨项目共享的数据」——例如网络盘上的公共底图库。",
+    "格式：别名 -> { type: gdb|shp, path: 完整路径, description: 说明 }",
+    "",
+    "search_roots: 额外的名字搜索根目录（项目根目录会自动作为搜索根，不用写在这里）。",
+    "default_project: 识别不到项目根目录时的兜底目录。",
+    "use_server_cwd_as_project: HTTP 模式下是否拿服务进程的工作目录当项目根目录（默认 false）。",
+    "require_project: 没确定项目根目录时，是否拒绝执行读数据的工具（默认 true）。",
+    "    设成 true 就是「必须先调 use_project」这个硬约束；只在用全局 workspaces 时才关掉。",
+    "defaults.limit / max_limit: 单次返回记录数的默认值与上限。",
+    "arcpy_python: ArcGIS Pro 自带的 python.exe（arcpy 只能在这个解释器里 import）。"
+  ],
+  "arcpy_python": "D:\\software\\arcgispro\\bin\\Python\\envs\\arcgispro-py3\\python.exe",
+  "search_roots": [],
+  "allow_absolute_paths": true,
+  "recursive_search_depth": 3,
+  "auto_discover": true,
+  "auto_discover_depth": 3,
+  "require_project": true,
+  "call_timeout": 300,
+  "startup_timeout": 180,
+  "read_timeout": 60,
+  "job_wait_seconds": 0,
+  "queue_timeout": 60,
+  "tool_timeouts": {
+    "eliminate": 1800,
+    "union": 1800,
+    "intersect": 1800,
+    "dissolve": 3600
+  },
+  "defaults": {
+    "limit": 100,
+    "max_limit": 2000,
+    "max_response_bytes": 1000000
+  },
+  "workspaces": {}
+}
