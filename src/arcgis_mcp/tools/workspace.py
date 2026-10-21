@@ -34,11 +34,14 @@ class UseProject(Tool):
 
         服务端会记住它（按客户端会话记住），所以一个会话里调一次就够了。
         切换项目就再调一次本工具。
+        分步脚本流程先用 configure_workflow_data 一次配置原始/过程/临时/交付角色，
+        再用 run_workflow_step 交替实验和正式执行；不要为每步或实验创建新 GDB。
 
         调用时服务端会顺手扫描这个目录，把 *.gdb 和含 shapefile 的目录列出来（见返回值 sources）。
         output_gdb: 可选，当前会话的默认输出 GDB，例如 ./工作.gdb；只选择，不在这里建库。
             产出工具的裸名称如 D_smooth 会写入该库，显式路径不变；编辑仍在源所在库产生副本。
-        auto_create_gdb: 可选，false 禁止写输出时自动建缺失的库；需要时显式 create_gdb 一次。
+        auto_create_gdb: 可选，false 禁止写输出时自动建缺失的库；此时须预先准备所需库。
+            独立 create_gdb 仅 legacy 配置注册，默认通过工作流角色配置按需建库。
             这两个选择仅当前会话生效；持久化可配置项目 .arcgis-mcp/datasources.json。
         """
         view = self.switch_project(ctx, folder)

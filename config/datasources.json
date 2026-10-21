@@ -25,6 +25,7 @@
   "auto_discover": true,
   "auto_discover_depth": 3,
   "require_project": true,
+  "tool_profile": "core",
   "call_timeout": 300,
   "startup_timeout": 180,
   "read_timeout": 60,

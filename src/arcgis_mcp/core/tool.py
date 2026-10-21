@@ -250,7 +250,7 @@ class Tool(ABC):
         self.log.debug("arcpy.%s 入参：%s", op, brief(args))
         try:
             settings = self.settings
-            if op in ('geoprocess', 'edit', 'run_arcpy_tool'):
+            if op in ('geoprocess', 'edit', 'run_arcpy_tool', 'run_unadapted_tool', 'run_workflow'):
                 if ctx is None:
                     raise ToolError('写操作必须带项目和会话上下文')
                 view = self.view(ctx)
@@ -263,6 +263,9 @@ class Tool(ABC):
                 if base.startswith('pairwise'):
                     base = base[len('pairwise'):]
                 budget = self.timeout or settings.tool_timeouts.get(name) or settings.tool_timeouts.get(base) or settings.call_timeout
+                if op == 'run_workflow':
+                    # Let the supervisor terminate/reap the script before the worker hard limit.
+                    budget = max(budget, args.get('timeout_seconds', 3600) + 60)
                 from .jobs import Jobs
                 worker = self.services.worker
                 # Protect initialization only; never hold the worker execution lock during a soft wait.
@@ -283,7 +286,7 @@ class Tool(ABC):
             self.log.warning("arcpy.%s 失败（%.2fs）：%s", op, time.perf_counter() - started, exc)
             raise
         self.log.info("arcpy.%s 完成（%.2fs）%s", op, time.perf_counter() - started, brief(result))
-        return self.compact_schema(result) if op in ('geoprocess', 'edit', 'run_arcpy_tool') else result
+        return self.compact_schema(result) if op in ('geoprocess', 'edit', 'run_arcpy_tool', 'run_unadapted_tool', 'run_workflow') else result
 
     # ------------------------------------------------------------------
     # 返回值处理

@@ -31,8 +31,10 @@ class ListArcpyTools(Tool):
                          toolbox: Optional[str] = None, limit: int = 60) -> str:
         """搜索本机 ArcPy 工具目录，数量随安装和扩展变化，不代表可执行数量。
 
-        优先使用固定封装；不足时在这里搜索。每项 execution.allowed 表示是否已有安全适配器，
-        只有 true 才能进一步查询参数并尝试 run_arcpy_tool；false 拒绝执行，confirm 不能绕过。
+        默认用这里查询语法，再在受审计工作流节点中编写 ArcPy 代码。
+        execution.allowed 表示兼容入口是否已有安全适配器，不表示 MCP 执行接口已经注册。
+        run_arcpy_tool / run_unadapted_tool 仅在 tool_profile=legacy 时暴露；以实际工具列表为准。
+        兼容 run_arcpy_tool 只允许 allowed=true，confirm 不能绕过分类。
         已适配仍受参数、输出、数据格式和许可证限制，不代表所有参数组合均已实测。
 
         参数
@@ -66,8 +68,10 @@ class DescribeArcpyTool(Tool):
         数据类型、可选值、是否多值，以及语法行。
 
         用它来搞清「这个工具要传什么参数名、哪些必填、某参数只能填什么值」，
-        同时返回 execution 安全适配状态。只有 allowed=true 才能尝试 run_arcpy_tool；
-        参数可查询不代表允许执行，安全适配不代表所有参数组合均已实测。
+        默认在受审计工作流节点中使用这些参数编写 ArcPy 代码。
+        execution 是兼容适配器状态；run_arcpy_tool / run_unadapted_tool 仅在 legacy 配置注册。
+        兼容 run_arcpy_tool 只有 allowed=true 才能尝试，仍需遵守参数限制。
+        参数可查询、安全适配均不代表所有参数组合已经实测。
 
         参数 tool: 工具名，三种写法都行 —— "GenerateTessellation"、
             "GenerateTessellation_management"、"management.GenerateTessellation"。

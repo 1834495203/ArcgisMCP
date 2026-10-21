@@ -798,6 +798,10 @@ def main() -> int:
                     inputs = result.get('inputs', [])
                     outputs = ([result['output']] if result.get('output') else
                                [x['path'] for x in result.get('outputs', []) if x.get('exists')])
+                    if op == 'run_workflow':
+                        # Individual committed steps own the DAG edges. A parent summary edge
+                        # would shadow the actual last step and hide intermediates.
+                        inputs, outputs = [], []
                     history.update(audit['job_id'], 'succeeded', result=result,
                                    inputs=inputs, outputs=outputs)
         except WorkerError as exc:

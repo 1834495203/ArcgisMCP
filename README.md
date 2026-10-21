@@ -96,6 +96,8 @@ $env:ARCGIS_MCP_ARCPY_PYTHON = "C:/Program Files/ArcGIS/Pro/bin/Python/envs/arcg
 
 ## 使用方式
 
+复杂流程可让 AI 用 `save_workflow_node` 保存 Python 节点，通过 `@节点.输出` 连接；`list_workflows` / `workflow_nodes` 查询，`run_saved_workflow` 运行，`export_workflow` 导出脚本。每轮记录代码、说明、输入输出和日志，不必逐个封装 ArcPy 算法。用法与原始数据保护边界见 [节点图工作流](docs/workflow-graphs.md)。默认副本输入；显式 `read_only` 可直接读取更广泛数据，但强制保护原件需部署执行账户只读权限。
+
 先让 AI 选择服务端存在的项目目录，之后使用相对路径：
 
 ```python
@@ -123,7 +125,7 @@ job_result(job_id="返回的任务ID")
 use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gdb=False)
 ```
 
-若库不存在，先显式调用 `create_gdb(out_features="./工作.gdb")` 并等待完成；之后产出工具的 `out_features="A_smooth"` 等裸名称写入该库，每步只换要素类名。显式路径不变，CSV/Excel 等文件仍写库外目录。跨会话配置可写入项目 `.arcgis-mcp/datasources.json`：
+工作流使用 `configure_workflow_data` 配置固定角色库，允许自动建库时在首次使用时创建。若关闭自动建库，应先准备好这些库；默认没有独立 `create_gdb` 工具。兼容模式中的产出工具支持裸名称写入默认工作库。跨会话配置可写入项目 `.arcgis-mcp/datasources.json`：
 
 ```json
 {"output_workspace": "./工作.gdb", "auto_create_gdb": false}
@@ -131,21 +133,22 @@ use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gd
 
 ## 主要功能
 
-| 类别 | 示例工具 |
-| --- | --- |
-| 项目与状态 | `use_project`、`list_datasources`、`arcgis_status` |
-| 读取与描述 | `list_gdb_datasets`、`read_gdb_data`、`read_shp_data`、`describe_data` |
-| 矢量处理 | `intersect`、`buffer`、`select`、`dissolve`、`eliminate`、`update_features` |
-| 编辑与统计 | `add_field`、`calculate_fields`、`delete_features`、`frequency`、`summary_statistics` |
-| 制图与栅格 | `smooth`、`simplify`、`raster_to_polygon`、`reclassify`、`resample` |
-| 格式转换 | `export_table`、`table_to_excel`、`features_to_json`、`xy_table_to_point` |
-| 历史与任务 | `lineage`、`explain`、`job_status`、`job_result` |
+默认仅注册 **24 个核心工具**，GIS 算法通过受审计工作流节点执行。
+
+| 类别 | 数量 | 工具 |
+| --- | ---: | --- |
+| 项目、读取与描述 | 8 | `use_project`、`list_datasources`、`arcgis_status`、`describe_data`、`list_gdb_datasets`、`read_gdb_data`、`list_shp_datasets`、`read_shp_data` |
+| 历史与任务 | 5 | `lineage`、`explain`、`job_status`、`job_result`、`job_logs` |
+| 工作流 | 9 | `configure_workflow_data`、`save_workflow_node`、`workflow_nodes`、`list_workflows`、`run_saved_workflow`、`run_workflow_step`、`workflow_steps`、`run_workflow`、`export_workflow` |
+| ArcPy 目录 | 2 | `list_arcpy_tools`、`describe_arcpy_tool` |
 
 具体参数以客户端获取的工具说明为准。`read_gdb_data` 支持要素类、表，以及已有属性表的整数分类栅格；不自动建立源栅格属性表。
 
-`read_*` / `describe_data` 的字段默认仅返回名称与类型，`schema_detail=true` 查看完整结构。`lineage` / `explain` 默认精简分页，用 `next_offset` 继续、`detail=true` 查看完整步骤。`zonal_statistics` 支持 GDB 表、DBF 和干净 CSV。栅格转面的实际分类字段通过 `output_value_field` 获取，不假定与输入字段同名。
+`read_*` / `describe_data` 的字段默认仅返回名称与类型，`schema_detail=true` 查看完整结构。`lineage` / `explain` 默认精简分页，用 `next_offset` 继续、`detail=true` 查看完整步骤。
 
-固定工具不足时，可用 `list_arcpy_tools` 搜索、`describe_arcpy_tool` 查询参数。只有 `execution.allowed=true` 的工具才能尝试通过 `run_arcpy_tool` 执行，仍需遵守返回的参数与输出限制。搜索数量不等于可执行数量，也不代表所有参数组合均已实测；未适配工具拒绝执行，任意 ArcPy 代码执行入口禁用。
+用 `list_arcpy_tools` 搜索、`describe_arcpy_tool` 查询参数，然后在节点正文中编写 ArcPy 代码。返回的 `execution` 是旧兼容适配器状态，不代表该 MCP 执行接口已注册，也不限制节点脚本能使用的算法。
+
+需要旧客户端接口时，在服务全局 `config/datasources.json` 设置 `"tool_profile": "legacy"`，或用环境变量 `ARCGIS_MCP_TOOL_PROFILE=legacy` 覆盖。重启后额外注册 58 个固定 GIS 工具和 `run_arcpy_tool`、`run_unadapted_tool`，共 84 个；默认 `core`。这是启动配置，不随项目或会话切换。旧 `allow_arcpy_code` 显式开启时还会注册一个拒绝执行代码的兼容入口，不建议启用。
 
 ## 数据保护与链路
 
@@ -173,6 +176,18 @@ use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gd
 
 ## 开发者如何扩展工具
 
+推荐使用 **`run_workflow_step`** 分步推进：先 `draft` 做分析与实验，再把采用的方案以 `final` 重算，期间可继续实验。每步保存代码、说明、理由、输入输出及 AI 自定的 `step.check` 验证；`workflow_steps` 查询，`export_workflow` 将成功正式步骤组合成可运行脚本及输入、参数、说明清单。
+
+`configure_workflow_data` 一次固定原始、过程、临时、交付数据布局。实验数据只进临时区，正式过程与交付分库；步骤不接收任意输出路径，不按步骤创建新 GDB。正式步骤不能依赖实验残留。详见 [分步实验、正式流程与导出](docs/incremental-workflows.md)。
+
+复杂流程现在可直接编写 Python 脚本，通过 **`run_workflow`** 提交，或用 `python -m arcgis_mcp.workflow` 在命令行运行。提交时保存脚本快照和理由；输入先复制，脚本通过步骤 SDK 登记依赖、生成输出或复制编辑，成功中间成果保留。`job_logs` 查过程，`lineage` / `explain` 查逐步链路。原有工具保留兼容，不再要求为每个算法新增 MCP 封装。详见 [脚本工作流与示例](docs/workflows.md)。
+
+脚本运行器面向可信本机代码，**不是安全沙箱**；硬编码原始路径或绕过 SDK 的写入无法全面拦截。首版输入快照仍受现有数据保真限制，不支持栅格及复杂关联输入。
+
+仅在 `legacy` 模式中，可使用 `run_arcpy_tool` 的已适配调用或 `run_unadapted_tool` 的有限临时声明。固定算法封装也仅在此模式注册，规则见 [兼容临时调用说明](docs/safety-history.md#未封装工具的临时调用)。新增流程优先节点脚本。
+
+`job_logs(job_id)` 查询持久化的理由、实际调用、路径映射、ArcPy 消息和阶段日志；`lineage` / `explain` 查询成功的加工链路。这些记录也保存在 `history.sqlite3`，服务重启后仍可查。
+
 先读 [AGENTS.md](AGENTS.md) 和 [工具扩展指南](docs/extending-tools.md)。后者提供代码示例、参数约定、注册步骤和测试要求。
 
 | 工具类型 | 接入方式 |
@@ -182,7 +197,7 @@ use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gd
 | 修改已有数据 | 继承 `EditTool`，在 `core/ops/attributes.py` 注册复制编辑算法 |
 | 扩展通用调用 | 在 `core/ops/meta.py` 增加经验证的安全分类或专用适配器 |
 
-固定工具还需加入 `tools/__init__.py` 的 `ALL_TOOLS`。`tools/` 负责类型化参数和中文说明，`core/ops/` 负责 ArcPy 算法；worker 侧保持 Python 3.9 兼容，不能导入 MCP SDK。
+固定工具加入 `tools/__init__.py` 的 `ALL_TOOLS` 后默认归入兼容组；新增核心接口还需明确加入 `CORE_TOOLS`，不要无意扩大默认列表。`tools/` 负责类型化参数和中文说明，`core/ops/` 负责 ArcPy 算法；worker 侧保持 Python 3.9 兼容，不能导入 MCP SDK。
 
 必须复用现有后台任务、复制、暂存发布、工作区锁和持久化审计流程。不要直接修改业务原件、自动删除成功版本、绕过分类执行任意代码，或只加工具名就宣称已安全支持。新增工具要验证实际数据结果及失败行为，并说明未验证范围。
 
@@ -191,6 +206,7 @@ use_project(folder="D:/projects/demo", output_gdb="./工作.gdb", auto_create_gd
 ```powershell
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_safety.py
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_execution_contracts.py
+.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_unadapted.py
 .venv/Scripts/python.exe -X utf8 tests/test_project.py
 .venv/Scripts/python.exe -X utf8 tests/test_resolver.py
 ```

@@ -34,6 +34,10 @@ EDITING: Dict[str, Dict[str, Any]] = dict(attributes.OPERATIONS)
 
 #: 通用层（搜索/查看工具，仅调用已安全适配的工具），由 worker 直接注册
 META: Dict[str, Any] = dict(meta.META_OPERATIONS)
+from .unadapted import run_unadapted_tool
+META['run_unadapted_tool'] = run_unadapted_tool
+from .workflow import run_workflow
+META['run_workflow'] = run_workflow
 
 __all__ = ["GEOPROCESSING", "EDITING", "META", "WorkerError", "brief", "field_names",
            "path_exists"]

@@ -4,11 +4,19 @@
 
 ## 先确认需求，再选入口
 
+默认 `tool_profile=core` 仅暴露 24 个项目/读取、任务/审计、工作流与目录接口。固定封装和两个通用执行入口仅在全局 `tool_profile=legacy` 注册，共 84 个。新增固定封装加入 `ALL_TOOLS` 会自动进入兼容组；只有确有必要的核心接口才同时加入 `CORE_TOOLS`。更改启动配置需重启并重新连接，项目配置不改变注册列表。
+
+可复用流程优先 [节点图工作流](workflow-graphs.md)：保存节点正文，输入通过引用连接，MCP 管理执行、日志与导出。read_only 输入扩展可读数据范围，但强保护依赖部署权限；它不会放宽固定适配器或 edit_copy 的保真检查。
+
+交互式试验和逐步确认使用 [增量工作流](incremental-workflows.md)，新增算法通常只需编写步骤正文，不需要新增 MCP 工具。不得绕过 draft/final、项目角色库、输入保护、逐步审计与导出依赖绑定；验证条件由 AI 编写并记录。
+
+复杂或一次性的多步骤流程优先编写 [受审计脚本工作流](workflows.md)，通过步骤 SDK 复用任务、复制、发布和历史。固定封装主要服务常用读取、统计及少量稳定编辑，不追求全量 ArcPy 适配。需要特殊数据保护或共享结构修改时，脚本也不能绕过保真和副作用设计。
+
 开始前写清五件事：ArcPy 实际工具名、输入数据类型、全部输出、是否隐式修改输入、需要暴露的参数。查看目标安装上的 `describe_arcpy_tool`，核对对应版本的 Esri 文档及许可证；元数据只能描述参数，不能证明工具没有副作用。
 
 | 需求 | 推荐方式 | 需要检查 |
 | --- | --- | --- |
-| 常用操作，需要中文说明、默认值或业务校验 | 新增固定 MCP 工具 | 参数类型、单位、真实执行语义 |
+| 常用操作，需要中文说明、默认值或参数校验 | 新增固定 MCP 工具 | 参数类型、单位、真实执行语义 |
 | 固定工具不够用的单输出产出工具 | 为通用调用增加安全分类 | 输入不变、显式输出、暂存路径兼容、无隐藏输出 |
 | ArcPy 原地改字段、几何或记录 | 新增 `EditTool` 和编辑操作 | 所有修改只作用于副本，数据约束保真 |
 | 只读查询 | `Tool` + worker 只读操作 | 不自动建立索引、统计表或修改源数据 |
@@ -94,6 +102,8 @@ class PairwiseBuffer(GeoProcessTool):
 
 ## 扩展通用调用
 
+仅需一次未适配工具时，可使用 `run_unadapted_tool` 的理由与输入/输出声明契约，见 [临时调用说明](safety-history.md#未封装工具的临时调用)。该入口复制全部数据集输入并持久化阶段日志，不会把工具加入永久允许列表；范围外的副作用仍须新增专用适配器。需要长期稳定使用或复杂参数时，继续按下述方式封装和验证。
+
 入口为 `core/ops/meta.py`，查询和执行必须继续使用同一套分类：
 
 | 位置 | 用途 |
@@ -134,6 +144,7 @@ class PairwiseBuffer(GeoProcessTool):
 .venv/Scripts/python.exe -X utf8 -m compileall -q src tests
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_safety.py
 .venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_execution_contracts.py
+.venv/Scripts/python.exe -X utf8 -m unittest discover -s tests -p test_unadapted.py
 .venv/Scripts/python.exe -X utf8 tests/test_project.py
 .venv/Scripts/python.exe -X utf8 tests/test_resolver.py
 ```

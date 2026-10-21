@@ -140,6 +140,7 @@ class Settings:
     use_server_cwd_as_project: bool = False    # HTTP 模式下是否拿服务进程 cwd 当项目
     require_project: bool = True               # 没确定项目根目录时，是否拒绝执行读数据的工具
     allow_arcpy_code: bool = False             # 是否开放「在 arcpy 里执行任意代码」这个工具
+    tool_profile: str = 'core'                 # core: 24 个核心接口；legacy: 全部兼容接口
 
     # ---- 查询辅助 -------------------------------------------------
     def workspace(self, alias: str) -> Optional[Workspace]:
@@ -172,6 +173,7 @@ class Settings:
             "use_server_cwd_as_project": self.use_server_cwd_as_project,
             "require_project": self.require_project,
             "allow_arcpy_code": self.allow_arcpy_code,
+            "tool_profile": self.tool_profile,
             'call_timeout': self.call_timeout,
             'startup_timeout': self.startup_timeout,
             'read_timeout': self.read_timeout,
@@ -303,7 +305,10 @@ def load_settings(config_path: Optional[Union[str, os.PathLike]] = None) -> Sett
         use_server_cwd_as_project=bool(raw.get("use_server_cwd_as_project", False)),
         require_project=bool(raw.get("require_project", True)),
         allow_arcpy_code=bool(raw.get("allow_arcpy_code", False)),
+        tool_profile=os.environ.get('ARCGIS_MCP_TOOL_PROFILE', raw.get('tool_profile', 'core')),
     )
+    if settings.tool_profile not in ('core', 'legacy'):
+        raise ConfigError('tool_profile 必须为 core 或 legacy')
     skip = raw.get("auto_discover_skip")
     if isinstance(skip, list) and skip:
         settings.auto_discover_skip = [str(s) for s in skip]

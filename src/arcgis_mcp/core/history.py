@@ -68,6 +68,10 @@ class History:
             db.execute('CREATE INDEX IF NOT EXISTS edges_output ON edges(output)')
             db.execute('CREATE INDEX IF NOT EXISTS edges_input ON edges(input)')
             db.execute('CREATE TABLE IF NOT EXISTS datasets (key TEXT PRIMARY KEY, path TEXT)')
+            db.execute('''CREATE TABLE IF NOT EXISTS job_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL,
+                ts REAL NOT NULL, stage TEXT NOT NULL, details TEXT NOT NULL)''')
+            db.execute('CREATE INDEX IF NOT EXISTS job_events_job ON job_events(job_id,sequence)')
             columns = {row['name'] for row in db.execute('PRAGMA table_info(operations)')}
             for column in ('expires', 'fingerprint'):
                 if column in columns:
@@ -149,6 +153,25 @@ class History:
                     for source in list(inputs) or ['']:
                         db.execute('INSERT OR IGNORE INTO edges VALUES(?,?,?)',
                                    (job_id, canonical(output), canonical(source) if source else ''))
+
+    def event(self, job_id, stage, details):
+        """Persist before executing the next stage; audit failure stops the operation."""
+        with self.connect() as db:
+            if not db.execute('SELECT 1 FROM operations WHERE id=?', (job_id,)).fetchone():
+                raise ValueError('当前项目中找不到 job_id：' + job_id)
+            db.execute('INSERT INTO job_events(job_id,ts,stage,details) VALUES(?,?,?,?)',
+                       (job_id, time.time(), stage, encode(details)))
+
+    def events(self, job_id, after=0, limit=20):
+        self.get(job_id)
+        limit = max(1, min(100, int(limit)))
+        with self.connect() as db:
+            rows = db.execute('SELECT sequence,ts,stage,details FROM job_events '
+                              'WHERE job_id=? AND sequence>? ORDER BY sequence LIMIT ?',
+                              (job_id, max(0, int(after)), limit + 1)).fetchall()
+        events = [{**dict(row), 'details': json.loads(row['details'])} for row in rows[:limit]]
+        return {'job_id': job_id, 'events': events, 'has_more': len(rows) > limit,
+                'next_after': events[-1]['sequence'] if events else after}
 
     def get(self, job_id):
         with self.connect() as db:
@@ -263,7 +286,13 @@ class History:
                     'created', 'started', 'finished', 'inputs', 'outputs', 'input_versions')},
                     'operation': payload.get('operation_summary') or payload.get('tool') or
                                  args.get('operation') or item['op'],
-                    'params': payload.get('params') or payload.get('parameters') or args.get('params') or {}})
+                    'params': payload.get('params') or payload.get('parameters') or args.get('params') or {},
+                    **({'reason': args['reason']} if args.get('reason') else {})})
+                if args.get('parent_job_id'):
+                    compact[-1]['parent_job_id'] = args['parent_job_id']
+                    compact[-1]['script_sha256'] = args.get('script_sha256')
+                    compact[-1]['mode'] = args.get('mode', 'final')
+                    compact[-1]['workflow_id'] = args.get('workflow_id')
             ordered = compact
         next_offset = offset + len(ordered) if offset + len(ordered) < total else None
         return {'path': self.display(canonical(path)), 'steps': ordered,

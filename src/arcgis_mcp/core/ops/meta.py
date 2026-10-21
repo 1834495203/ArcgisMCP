@@ -277,6 +277,9 @@ def tool_execution_support(name: str, parameters=None) -> Dict[str, Any]:
         if operation == 'calculate_fields':
             supported.update(('field', 'expression'))
         result['supported_parameters'] = sorted(supported)
+    if not allowed:
+        result['alternative_entry'] = {'tool': 'run_unadapted_tool',
+            'requirements': '必须填写理由并声明全部输入及单一输出/编辑目标；仅支持有限标准工具箱和独立要素类/表，不保证本工具可用。'}
     if parameters is not None and mode == 'produce_publish':
         result['explicit_output_parameters'] = [p['name'] for p in parameters
             if str(p['direction']).lower() == 'output'

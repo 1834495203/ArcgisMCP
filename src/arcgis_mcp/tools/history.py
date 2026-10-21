@@ -56,9 +56,30 @@ class Explain(Tool):
             label = step.get('operation') or payload.get('operation_summary') or payload.get('tool') or step.get('args', {}).get('operation') or step.get('op')
             params = step.get('params') or payload.get('params') or payload.get('parameters') or step.get('args', {}).get('params') or {}
             detail = '；参数：' + self.dumps(params) if params else ''
+            reason = step.get('reason') or step.get('args', {}).get('reason')
+            if reason:
+                detail += '；使用理由：' + reason
             lines.append(f"{i}. {label}：{', '.join(step['inputs']) or '新建'} → {', '.join(step['outputs'])}{detail}")
         result['explanation'] = ('\n'.join(lines) if lines else '本页没有步骤。' if result['total_steps']
                                  else '未找到 MCP 加工记录；该路径可能是外部原始数据。')
+        return self.dumps({'ok': True, **self.project_block(view), **result})
+
+
+class JobLogs(Tool):
+    name = 'job_logs'
+    needs_project = True
+
+    def job_logs(self, ctx: Context, job_id: str, after: int = 0, limit: int = 20) -> str:
+        """查询持久化阶段日志：未封装调用的理由、实际调用、路径映射、ArcPy 消息及失败。
+
+        失败/重启后也可查；after 使用上页 next_after，limit 为 1~100。
+        详细阶段日志由 run_unadapted_tool / run_workflow 记录，旧任务可能没有阶段日志。
+        """
+        view = self.view(ctx)
+        try:
+            result = project_history(view).events(job_id, after, limit)
+        except ValueError as exc:
+            return self.error('JobNotFound', exc, view)
         return self.dumps({'ok': True, **self.project_block(view), **result})
 
 

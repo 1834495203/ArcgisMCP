@@ -117,12 +117,13 @@ def sibling(path, prefix):
     return str(p.with_name(prefix + uuid.uuid4().hex[:12] + p.suffix))
 
 
-def version_path(path, operation='archive'):
+def version_path(path, operation='archive', reserved=()):
     """Choose a readable retained name; caller must hold the workspace lease.
 
     Random names are reserved for internal staging. Existing versions are never overwritten.
     """
     p = Path(path)
+    reserved = {os.path.normcase(os.path.abspath(str(value))) for value in reserved}
     # Feature classes can contain dots; only ordinary file extensions are retained.
     suffix = p.suffix if not any(x.suffix.lower() in ('.gdb', '.mdb') for x in p.parents) else ''
     stem = p.name[:-len(suffix)] if suffix else p.name
@@ -135,7 +136,7 @@ def version_path(path, operation='archive'):
         companions = ([str(Path(candidate).with_suffix(ext)) for ext in
                        ('.dbf', '.shx', '.prj', '.cpg', '.sbn', '.sbx')] + [candidate + '.xml']
                       if suffix.lower() == '.shp' else [])
-        if not path_exists(candidate) and not any(os.path.lexists(x) for x in [candidate] + companions):
+        if os.path.normcase(os.path.abspath(candidate)) not in reserved and not path_exists(candidate) and not any(os.path.lexists(x) for x in [candidate] + companions):
             return candidate
         number += 1
 

@@ -17,7 +17,7 @@ from .core.middleware import ToolCallLogger
 from .core.project import ProjectRegistry
 from .core.tool import Services
 from .core.worker import ArcPyWorker
-from .tools import ALL_TOOLS, register_all
+from .tools import register_all, tool_names
 
 INSTRUCTIONS = """\
 本服务用本机 arcpy 读取、处理 ArcGIS 数据，并保留整个数据集的加工链路。
@@ -44,26 +44,21 @@ INSTRUCTIONS = """\
 
 读数据时的习惯：先用 limit=0 看表结构，再小 limit 抽样，需要更多就用 next_offset 翻页。
 
-工作库约定：同一个 GDB 支持连续处理并保存多个要素类；同一 worker 串行执行。
-优先复用用户指定的输出 GDB。用户未指定时，先查看已有数据源，选择一个工作库；
-需要隔离输入数据时可使用一个项目成果库。一次流程复用该库，不要每步新建 GDB。
-输出应写成 ./results.gdb/步骤名，例如 A、A_smooth、A_dissolve；换步骤只换要素类名。
-保留中间数据不等于复制整个 GDB。编辑操作会在输入同一 workspace 生成原名_操作名副本。
-只有请求输出所指的 GDB 不存在时才自动创建；不需要为每个工具预先调用 create_gdb。
-不要为了绕过输出重名、排队超时或锁错误而新建 GDB。重名换要素类名或明确使用 overwrite；
-任务返回 job_id 后先查 job_result，成功后使用实际 output；锁错误需关闭占用数据的图层/编辑会话或稍后重试。
-
-删除语义：delete_dataset(in_features="./results.gdb/要素类名", confirm=true)
-移除该要素类的原路径并保留归档，不物理擦除历史；不要把整个 .gdb 路径当作要素类路径。
-delete_features 则只在新副本里删除记录，原要素类仍存在，不能用于移除原要素类。
-归档保留不代表删除失败；遇到真实错误应报告 job_result 的原文，不要笼统声称 GDB 不支持删除。
-本服务不提供物理擦除历史成果的出口。CSV 导出可能在 .arcgis-mcp/scratch/ 下建立临时 GDB，
-正常结束会清理；这不是每一步都要创建新的业务 GDB。
-
-可用 use_project(output_gdb="./工作.gdb", auto_create_gdb=false, folder="项目绝对路径")
-为本会话选择默认工作库并禁止自动建库；库不存在时显式 create_gdb 一次。
-产出工具的裸数据集名会写入默认工作库；显式路径保持不变，CSV/Excel 等文件请显式给出库外路径。
-项目 .arcgis-mcp/datasources.json 的 output_workspace / auto_create_gdb 可持久化这些设置。
+默认提供 24 个核心接口：项目读取、任务审计、工作流与 ArcPy 目录查询。
+GIS 处理通过节点脚本执行，不要尝试调用工具列表中未注册的固定封装或通用执行入口。
+先用 configure_workflow_data 固定过程、临时、交付库，不按步骤或实验新建 GDB。
+探索和验证用 run_workflow_step(mode="draft")；采用的方法以 final 重算，验证由 AI 编写 step.check。
+可复用流程用 save_workflow_node 保存 Python 正文、说明、理由和输入输出，
+节点输入通过 @节点ID.输出别名 引用上游；workflow_nodes 查询，run_saved_workflow 运行。
+list_workflows 列已有定义；workflow_steps 查实际执行历史；export_workflow 导出脚本，
+run_workflow 用于批量脚本或导出流程重跑。修改定义不影响先前提交的代码快照。
+输出路径由服务端分配；编辑用 edit_inputs 或 step.edit_copy，在副本上操作，保留上游成果。
+输入默认 snapshot 保真复制；显式 read_only 支持直接读取更多数据类型，但仅为只读约定，
+强制保护原件需要部署执行身份的只读权限。任意脚本不是 Python/文件系统安全沙箱。
+list_arcpy_tools / describe_arcpy_tool 用于查询 ArcPy 语法，execution 是兼容适配器元数据，
+不代表对应 MCP 执行接口已注册，也不限制受审计节点内可使用的 ArcPy 算法。
+tool_profile=legacy 可在服务启动时额外注册旧封装和通用入口；以实际 tools/list 为准。
+任务返回 job_id 后先查 job_result；客户端超时不表示操作停止，unknown 不自动重放。
 lineage / explain 默认精简分页；通过 next_offset 继续，detail=true 取完整步骤。
 read_* / describe_data 默认只返回字段 name/type，schema_detail=true 获取完整字段结构。
 job_result(wait_seconds=5) 可短暂等待后台任务，不占 ArcPy 锁；detail=true 获取完整原始结果。
@@ -109,9 +104,9 @@ def build_server(app: App) -> MCPServer:
     """建 MCP 服务并注册所有工具与中间件。"""
     server = MCPServer(name="arcgis-mcp", instructions=INSTRUCTIONS,
                        middleware=[ToolCallLogger()])
-    register_all(server, app.services)
-    _log.info("已注册 %d 个工具：%s", len(ALL_TOOLS),
-              "、".join(t.name for t in ALL_TOOLS))
+    instances = register_all(server, app.services)
+    _log.info("工具配置=%s，已注册 %d 个工具：%s", app.settings.tool_profile, len(instances),
+              "、".join(t.name for t in instances))
     return server
 
 
@@ -141,6 +136,6 @@ def diagnostics(app: App) -> Dict[str, Any]:
         "settings": app.settings.to_dict(),
         "project": view.to_dict(),
         "worker": app.worker.status(),
-        "tools": [t.name for t in ALL_TOOLS],
+        "tools": tool_names(app.settings),
         "problems": self_check(app.settings) + view.problems,
     }

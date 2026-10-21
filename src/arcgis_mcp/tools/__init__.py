@@ -125,7 +125,10 @@ from .raster import (
 )
 from .shp import ListShpDatasets, ReadShpData
 from .workspace import ArcGisStatus, ListDataSources, UseProject
-from .history import Lineage, Explain, JobStatus, JobResult
+from .history import Lineage, Explain, JobStatus, JobResult, JobLogs
+from .unadapted import RunUnadaptedTool
+from .workflow import (RunWorkflow, ConfigureWorkflowData, RunWorkflowStep, WorkflowSteps, ExportWorkflow,
+                       SaveWorkflowNode, WorkflowNodes, ListWorkflows, RunSavedWorkflow)
 
 #: 注册顺序 = AI 看到的工具列表顺序：先告诉服务端在哪干活、再看有什么、再读、再写
 #: （通用层工具 ListArcpyTools / DescribeArcpyTool / RunArcpyTool 在上面「项目与探索」那段，
@@ -140,10 +143,21 @@ ALL_TOOLS: Sequence[Type[Tool]] = (
     Explain,
     JobStatus,
     JobResult,
+    JobLogs,
     # 通用 arcpy 能力：固定工具不够用时的出口
     ListArcpyTools,
     DescribeArcpyTool,
     RunArcpyTool,
+    RunUnadaptedTool,
+    RunWorkflow,
+    ConfigureWorkflowData,
+    RunWorkflowStep,
+    WorkflowSteps,
+    ExportWorkflow,
+    SaveWorkflowNode,
+    WorkflowNodes,
+    ListWorkflows,
+    RunSavedWorkflow,
     # 读取
     ListGdbDatasets,
     ReadGdbData,
@@ -216,6 +230,31 @@ ALL_TOOLS: Sequence[Type[Tool]] = (
 )
 
 
+# Default public surface: project/read (8), audit/jobs (5), workflows (9), catalog (2).
+# ALL_TOOLS remains the complete implementation inventory for extension/compatibility.
+CORE_TOOLS: Sequence[Type[Tool]] = (
+    UseProject, ListDataSources, DescribeData, ArcGisStatus,
+    ListGdbDatasets, ReadGdbData, ListShpDatasets, ReadShpData,
+    Lineage, Explain, JobStatus, JobResult, JobLogs,
+    ConfigureWorkflowData, RunWorkflow, RunWorkflowStep, WorkflowSteps, ExportWorkflow,
+    SaveWorkflowNode, WorkflowNodes, ListWorkflows, RunSavedWorkflow,
+    ListArcpyTools, DescribeArcpyTool,
+)
+LEGACY_TOOLS: Sequence[Type[Tool]] = tuple(t for t in ALL_TOOLS if t not in CORE_TOOLS)
+
+
+def selected_tools(settings=None) -> list:
+    """Resolve the startup catalog; no per-project/request dynamic registration."""
+    from ..core.config import ConfigError
+    profile = settings.tool_profile if settings is not None else 'core'
+    if profile not in ('core', 'legacy'):
+        raise ConfigError('tool_profile 必须为 core 或 legacy')
+    classes = list(ALL_TOOLS if profile == 'legacy' else CORE_TOOLS)
+    if settings is not None and settings.allow_arcpy_code:
+        classes.append(RunArcpyCode)
+    return classes
+
+
 def register_all(server, services: Services) -> list:
     """实例化所有工具并注册到 MCP server，返回实例列表（便于自检/测试）。
 
@@ -223,9 +262,8 @@ def register_all(server, services: Services) -> list:
     """
     from ..core.logs import get_logger
 
-    classes = list(ALL_TOOLS)
+    classes = selected_tools(services.settings)
     if services.settings.allow_arcpy_code:
-        classes.append(RunArcpyCode)
         get_logger("server").warning(
             "allow_arcpy_code=true：已注册兼容入口 run_arcpy_code，"
             "但审计保留模式禁止执行任意代码；请使用安全工具适配器"
@@ -238,8 +276,8 @@ def register_all(server, services: Services) -> list:
     return instances
 
 
-def tool_names() -> list:
-    return [t.name for t in ALL_TOOLS]
+def tool_names(settings=None) -> list:
+    return [t.name for t in selected_tools(settings)]
 
 
-__all__ = ["ALL_TOOLS", "register_all", "tool_names", "Tool", "Services"]
+__all__ = ["ALL_TOOLS", "CORE_TOOLS", "LEGACY_TOOLS", "selected_tools", "register_all", "tool_names", "Tool", "Services"]

@@ -1,6 +1,38 @@
 # 数据版本、操作审计与任务
 
+新增 [节点图工作流](workflow-graphs.md)，通过引用连接输入输出并保存当前定义、每轮代码快照和独立节点审计。任意 ArcPy 正文不再逐工具分类；默认副本输入保留保真检查，显式 read_only 只读引用不复制，须由部署权限强制保护原件，不能称为沙箱。
+
 所有公开写工具以整个数据集为单位保存加工历史，不追踪单条图斑。
+
+复杂流程新增 `run_workflow` 脚本入口，具体协议见 [脚本工作流](workflows.md)。它复用当前任务、SQLite、工作区锁和发布机制，按步骤记录链路；与下面单工具临时调用不同。脚本执行依赖可信代码遵守 SDK 约定，不提供任意 Python 的写入隔离。
+
+## 未封装工具的临时调用
+
+本节固定封装、`run_arcpy_tool`、`run_unadapted_tool` 仅在服务全局 `tool_profile=legacy` 时注册。默认 `core` 使用受审计工作流脚本，目录查询中的 execution 只是兼容适配元数据，不能据此调用未注册接口。
+
+优先使用固定封装、其次使用已分类的 `run_arcpy_tool`；仍缺少工具时，用独立的 `run_unadapted_tool` 声明本次调用，不会修改永久允许列表。
+
+```text
+run_unadapted_tool(
+  tool="DeleteIdentical_management",
+  reason="固定工具没有按指定字段去重的能力，需要生成去重后的新版本",
+  parameters={"in_dataset":"./work.gdb/A", "fields":["TYPE"]},
+  input_parameters=["in_dataset"], edit_parameter="in_dataset", confirm=true)
+  -> pending/job_id
+job_result(job_id=...) -> result.primary_output / result.outputs
+job_logs(job_id=..., after=0, limit=20)
+explain(path=返回的 primary_output)
+```
+
+新产出操作改传 `output_parameter="真实输出参数名"`，并在 `parameters` 中给出输出路径；不能同时传 `edit_parameter`。参数名大小写以 `describe_arcpy_tool` 为准。所有数据集输入都必须列在 `input_parameters`，服务端将每个输入复制并替换实际调用参数，即使调用者认为它只读；所有副本和主输出成功后发布，保留为步骤成果，`primary_output` 是后续应使用的主结果。
+
+首版只支持项目根目录内的独立要素类、表及 Shapefile，单值数据集输入、单个显式要素类/表输出或副本编辑；工具来自已安装的 management、analysis、conversion、cartography、stats、edit 标准工具箱。栅格、工作空间/文件参数、多值数据集、值表、复杂关系数据、多输出和自定义工具箱需专门适配。保真检查失败仍拒绝。输出不能等于输入，已有输出遵循 `overwrite` 归档规则。副本可能增加存储和执行时间。
+
+删除/清空等操作即使作用于副本也需要 `confirm=true`。临时入口不支持 CSV 输出，请使用已适配的表格工具；普通参数只接受已识别的标量类型，坐标系对象、范围/值表等需要专用适配。
+
+使用理由、逻辑参数先随任务持久化；执行过程再写入 SQLite `job_events`：请求、校验、复制、实际 ArcPy 调用及参数映射、ArcPy 消息、发布和失败。`job_logs` 按 sequence 分页，`next_after` 用于下一页。日志写入失败会停止下一阶段；失败调用也保留任务参数与已写日志，成功调用加入现有链路，精简 `lineage` 和 `explain` 同样带理由。普通旧工具任务可能没有详细阶段日志。
+
+这是可信本机客户端的声明执行契约，不是对工具实现或参数表达式的安全沙箱。元数据无法证明无额外副作用，AI 仍需查清工具语义，不能据此承诺任意工具都可靠。多个保留副本的发布以及文件发布与 SQLite 审计不是一个原子事务；发布中断可能留下已发布副本或暂存成果，应结合 `job_result`、`job_logs` 和事务清单检查，不可自动重放。
 
 ## 成果保留
 
@@ -78,7 +110,7 @@ ArcGIS Pro 不遵守本项目的协作锁，读图层仍可能占用 schema lock
 
 复制编辑支持独立要素类、shapefile 和表。编辑前后检查字段、域引用、子类型、记录数、坐标系/Z/M、索引结构和 GlobalID 值。带附件/关系、属性规则、版本管理、编辑追踪或要素数据集关联的数据尚未验证，拒绝复制编辑，避免静默丢失约束。
 
-`run_arcpy_tool` 使用明确的安全分类：常用产出工具走暂存发布，支持的编辑工具走复制适配器，派生输出不当作可覆盖输出。未分类工具直接拒绝，需增加适配器后才能执行。`CreateFeatureclass` / `CreateTable` / `CreateFileGDB` / `TableToTable` 的目录和名称组合也按实际数据集发布；工作空间相对路径按项目根目录解析。
+`run_arcpy_tool` 使用明确的安全分类：常用产出工具走暂存发布，支持的编辑工具走复制适配器，派生输出不当作可覆盖输出。未分类工具在此入口拒绝；可增加永久适配器，或满足上文 `run_unadapted_tool` 的有限临时声明契约后使用独立入口。`CreateFeatureclass` / `CreateTable` / `CreateFileGDB` / `TableToTable` 的目录和名称组合也按实际数据集发布；工作空间相对路径按项目根目录解析。
 
 `list_arcpy_tools` 和 `describe_arcpy_tool` 返回共用执行分类的 `execution`：`allowed` 表示已有适配器，`mode` 表示只读、复制编辑、暂存发布或归档删除，`constraints` 列出限制。编辑适配器的 `supported_parameters` 明确可用参数；其他 ArcPy 参数不因能查询到就获准使用。`validation=not_certified_for_all_parameters` 表示不承诺所有参数组合均已实测。搜索的 `total_matched` 只是本机匹配目录数，`classified_matched` 才是其中已分类数（均在截断前统计）；两者都不代表逐工具验证数量。固定封装优先，通用调用仍需核验坐标系、单位、许可证和结果。
 

@@ -129,6 +129,23 @@ def main():
             generic_copy = write('run_arcpy_tool', tool='CopyFeatures_management', parameters={
                 'in_features': generic['output'], 'out_feature_class': gdb + '/generic'})
             check('generic producers audited', len(History(root).lineage(generic_copy['outputs'][0]['path'])['steps']) == 5)
+            temporary_edit = write('run_unadapted_tool', tool='DeleteIdentical_management',
+                reason='固定封装没有按字段去重；在副本上验证临时工具入口。',
+                parameters={'in_dataset': added, 'fields': ['VALUE']},
+                input_parameters=['in_dataset'], edit_parameter='in_dataset', confirm=True)
+            check('unadapted edit removes duplicate on private copy',
+                  worker.call('describe', path=temporary_edit['primary_output'])['record_count'] == 1)
+            check('unadapted edit retains source rows', worker.call('describe', path=added)['record_count'] == 2)
+            logs = History(root).events(temporary_edit['job_id'], limit=100)['events']
+            check('unadapted execution has durable reason and actual invocation',
+                  any(e['stage'] == 'executing' and 'arcpy.DeleteIdentical_management' in e['details']['invocation'] for e in logs))
+            chain = History(root).lineage(temporary_edit['primary_output'], detail=False)
+            check('unadapted operation joins lineage with reason', any(s.get('reason') for s in chain['steps']))
+            temporary_producer = write('run_unadapted_tool', tool='FeatureVerticesToPoints_management',
+                reason='验证无永久适配器的单输出工具。',
+                parameters={'in_features': original, 'out_feature_class': gdb + '/temporary_vertices'},
+                input_parameters=['in_features'], output_parameter='out_feature_class')
+            check('unadapted producer publishes declared output', Path(temporary_producer['primary_output']) == Path(gdb) / 'temporary_vertices')
             ranked = write('run_arcpy_tool', tool='Intersect_analysis', parameters={
                 'in_features': [['./test.gdb/original', 1], ['./test.gdb/' + Path(calculated).name, 1]],
                 'out_feature_class': './test.gdb/ranked_intersection'})
